@@ -39,7 +39,6 @@ import org.wso2.carbon.apimgt.gateway.internal.ServiceReferenceHolder;
 import org.wso2.carbon.apimgt.gateway.jwt.RevokedJWTDataHolder;
 import org.wso2.carbon.apimgt.gateway.utils.GatewayUtils;
 import org.wso2.carbon.apimgt.impl.APIConstants;
-import org.wso2.carbon.apimgt.impl.APIManagerConfiguration;
 import org.wso2.carbon.apimgt.impl.caching.CacheProvider;
 import org.wso2.carbon.apimgt.impl.dto.APIKeyValidationInfoDTO;
 import org.wso2.carbon.apimgt.impl.dto.JWTConfigurationDto;
@@ -55,7 +54,6 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
-
 import javax.cache.Cache;
 
 /**
@@ -266,12 +264,13 @@ public class JWTValidator {
      * @param signedJWTInfo   The JWT token sent with the API request
      * @param apiContext The context of the invoked API
      * @param apiVersion The version of the invoked API
+     * @param matchingResource template of matching api resource
      * @return an AuthenticationContext object which contains the authentication information
      * @throws APISecurityException in case of authentication failure
      */
     @MethodStats
     public AuthenticationContext authenticateForWebSocket(SignedJWTInfo signedJWTInfo, String apiContext,
-                                                          String apiVersion)
+                                                          String apiVersion , String matchingResource)
             throws APISecurityException {
 
         String tokenSignature = signedJWTInfo.getSignedJWT().getSignature().toString();
@@ -305,6 +304,7 @@ public class JWTValidator {
                         apiKeyValidationInfoDTO.isAuthorized());
             }
             if (apiKeyValidationInfoDTO.isAuthorized()) {
+                validateScopes(apiContext, apiVersion, matchingResource, "WS", jwtValidationInfo, signedJWTInfo);
                 log.debug("JWT authentication successful. user: " + apiKeyValidationInfoDTO.getEndUserName());
                 String endUserToken = null;
                 JWTInfoDto jwtInfoDto;
