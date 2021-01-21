@@ -271,7 +271,7 @@ public class JWTValidator {
      */
     @MethodStats
     public AuthenticationContext authenticateForWebSocket(SignedJWTInfo signedJWTInfo, String apiContext,
-                                                          String apiVersion)
+                                                          String apiVersion , String matchingResource)
             throws APISecurityException {
 
         String tokenSignature = signedJWTInfo.getSignedJWT().getSignature().toString();
@@ -305,6 +305,8 @@ public class JWTValidator {
                         apiKeyValidationInfoDTO.isAuthorized());
             }
             if (apiKeyValidationInfoDTO.isAuthorized()) {
+                // Validate scopes
+                validateScopes(apiContext, apiVersion, matchingResource, "WS", jwtValidationInfo, signedJWTInfo);
                 log.debug("JWT authentication successful. user: " + apiKeyValidationInfoDTO.getEndUserName());
                 String endUserToken = null;
                 JWTInfoDto jwtInfoDto;
