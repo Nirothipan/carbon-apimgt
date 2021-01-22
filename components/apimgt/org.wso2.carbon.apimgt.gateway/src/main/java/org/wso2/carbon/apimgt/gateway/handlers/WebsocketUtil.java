@@ -27,8 +27,6 @@ import org.apache.axis2.context.OperationContext;
 import org.apache.axis2.context.ServiceContext;
 import org.apache.axis2.description.InOutAxisOperation;
 import org.apache.synapse.MessageContext;
-import org.apache.synapse.SynapseConstants;
-import org.apache.synapse.core.axis2.Axis2MessageContext;
 import org.apache.synapse.core.axis2.MessageContextCreatorForAxis2;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -170,15 +168,15 @@ public class WebsocketUtil {
 		return (isApiLevelThrottled || isApplicationLevelThrottled || isSubscriptionLevelThrottled);
 	}
 
-	public static String getAccessTokenCacheKey(String accessToken, String apiContext) {
-		return accessToken + ':' + apiContext;
+	public static String getAccessTokenCacheKey(String accessToken, String apiContext, String matchingResource) {
+		return accessToken + ':' + apiContext + ':' + matchingResource;
 	}
 
 	public static MessageContext getSynapseMessageContext(String tenantDomain) throws AxisFault {
 
 		MessageContext synCtx = createSynapseMessageContext(tenantDomain);
-		synCtx.setProperty(SynapseConstants.IS_INBOUND, true);
-		((Axis2MessageContext) synCtx).getAxis2MessageContext().setProperty(SynapseConstants.IS_INBOUND, true);
+		//		synCtx.setProperty(SynapseConstants.IS_INBOUND, true);
+		//		((Axis2MessageContext) synCtx).getAxis2MessageContext().setProperty(SynapseConstants.IS_INBOUND, true);
 		return synCtx;
 	}
 

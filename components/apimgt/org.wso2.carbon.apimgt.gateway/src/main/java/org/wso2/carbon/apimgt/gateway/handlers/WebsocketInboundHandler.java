@@ -109,6 +109,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
     private io.netty.handler.codec.http.HttpHeaders headers = new DefaultHttpHeaders();
     private String token;
     private String apiContext;
+    private String apiName;
     private static final AttributeKey<Map<String, Object>> WSO2_PROPERTIES = AttributeKey.valueOf("WSO2_PROPERTIES");
     private static final Map<String, Object> PRODUCTION_KEY = Collections.singletonMap(APIConstants.API_KEY_TYPE,
                                                                                        APIConstants.API_KEY_TYPE_PRODUCTION);
@@ -246,10 +247,14 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
     /**
      * Authenticate request
      *
-     * @param req Full Http Request
-     * @return true if the access token is valid
+     * @param ctx              Channel context
+     * @param req              Full Http Request
+     * @param matchingResource resource template matching invocation
+     * @return whether authenticated or not
+     * @throws APISecurityException if authentication fails
      */
-    private boolean validateOAuthHeader(ChannelHandlerContext ctx, FullHttpRequest req, String matchingResource) throws APISecurityException {
+    private boolean validateOAuthHeader(ChannelHandlerContext ctx, FullHttpRequest req, String matchingResource)
+            throws APISecurityException {
         try {
             PrivilegedCarbonContext.startTenantFlow();
             PrivilegedCarbonContext.getThreadLocalCarbonContext().setTenantDomain(tenantDomain, true);
@@ -350,7 +355,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
                     log.debug("The token was identified as an OAuth token");
                     //If the key have already been validated
                     if (WebsocketUtil.isGatewayTokenCacheEnabled()) {
-                        cacheKey = WebsocketUtil.getAccessTokenCacheKey(apiKey, uri);
+                        cacheKey = WebsocketUtil.getAccessTokenCacheKey(apiKey, apiContext, matchingResource);
                         info = WebsocketUtil.validateCache(apiKey, cacheKey);
                         if (info != null) {
                             setKeyTypeAsChannelAttribute(ctx,info.getType());
@@ -367,14 +372,14 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
                     if (info == null || !info.isAuthorized()) {
                         return false;
                     }
-                    if (info.getApiName() != null && info.getApiName().contains("*")) {
-                        String[] str = info.getApiName().split("\\*");
-                        version = str[1];
-                        uri += "/" + str[1];
-                        info.setApiName(str[0]);
-                    }
+//                    if (info.getApiName() != null && info.getApiName().contains("*")) {
+//                        String[] str = info.getApiName().split("\\*");
+//                        version = str[1];
+//                        uri += "/" + str[1];
+//                        info.setApiName(str[0]);
+//                    }
                     if (WebsocketUtil.isGatewayTokenCacheEnabled()) {
-                        cacheKey = WebsocketUtil.getAccessTokenCacheKey(apiKey, uri);
+                        cacheKey = WebsocketUtil.getAccessTokenCacheKey(apiKey, apiContext, matchingResource);
                         WebsocketUtil.putCache(info, apiKey, cacheKey);
                     }
                     setKeyTypeAsChannelAttribute(ctx,info.getType());
