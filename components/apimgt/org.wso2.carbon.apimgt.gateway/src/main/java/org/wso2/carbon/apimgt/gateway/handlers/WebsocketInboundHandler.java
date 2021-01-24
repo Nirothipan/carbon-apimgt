@@ -59,6 +59,7 @@ import org.wso2.carbon.apimgt.gateway.handlers.security.APISecurityUtils;
 import org.wso2.carbon.apimgt.gateway.handlers.security.AuthenticationContext;
 import org.wso2.carbon.apimgt.gateway.handlers.security.jwt.JWTValidator;
 import org.wso2.carbon.apimgt.gateway.handlers.throttling.APIThrottleConstants;
+import org.wso2.carbon.apimgt.gateway.handlers.websocket.WebSocketApiException;
 import org.wso2.carbon.apimgt.gateway.internal.ServiceReferenceHolder;
 import org.wso2.carbon.apimgt.gateway.utils.APIMgtGoogleAnalyticsUtils;
 import org.wso2.carbon.apimgt.impl.APIConstants;
@@ -86,13 +87,18 @@ import java.net.URISyntaxException;
 import java.net.UnknownHostException;
 import java.text.ParseException;
 import java.util.Arrays;
-import java.util.Collections;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import javax.cache.Cache;
+
+import static org.wso2.carbon.apimgt.gateway.handlers.websocket.WebSocketApiConstants.URL_SEPARATOR;
+import static org.wso2.carbon.apimgt.gateway.handlers.websocket.WebSocketApiConstants.WS_ENDPOINT_NAME;
+import static org.wso2.carbon.apimgt.gateway.handlers.websocket.WebSocketApiConstants.WS_SECURED_ENDPOINT_NAME;
 
 /**
  * This is a handler which is actually embedded to the netty pipeline which does operations such as
@@ -102,19 +108,17 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
     private static final Log log = LogFactory.getLog(WebsocketInboundHandler.class);
     private String tenantDomain;
     private static APIMgtUsageDataPublisher usageDataPublisher;
-    private String uri;
     private String fullRequestUri;
     private String version;
     private APIKeyValidationInfoDTO infoDTO = new APIKeyValidationInfoDTO();
     private io.netty.handler.codec.http.HttpHeaders headers = new DefaultHttpHeaders();
     private String token;
     private String apiContext;
+    private String inboundName;
     private String apiName;
+    private String keyType;
+    private API api;
     private static final AttributeKey<Map<String, Object>> WSO2_PROPERTIES = AttributeKey.valueOf("WSO2_PROPERTIES");
-    private static final Map<String, Object> PRODUCTION_KEY = Collections.singletonMap(APIConstants.API_KEY_TYPE,
-                                                                                       APIConstants.API_KEY_TYPE_PRODUCTION);
-    private static final Map<String, Object> SANDBOX_KEY = Collections.singletonMap(APIConstants.API_KEY_TYPE,
-                                                                                    APIConstants.API_KEY_TYPE_SANDBOX);
 
     public WebsocketInboundHandler() {
         initializeDataPublisher();
@@ -156,8 +160,9 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
             FullHttpRequest req = (FullHttpRequest) msg;
 
             setUris(req);
-            setTenantDomain(uri);
-            String matchingResource = getMatchingResource(getMessageContext(tenantDomain));
+            inboundName = ctx.channel().pipeline().get("ssl") != null ? WS_SECURED_ENDPOINT_NAME : WS_ENDPOINT_NAME  ;
+            setTenantDomain(fullRequestUri);
+            String matchingResource = getMatchingResource(ctx, getMessageContext(tenantDomain), req);
 
             String useragent = req.headers().get(HttpHeaders.USER_AGENT);
 
@@ -168,7 +173,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
             headers.add(HttpHeaders.USER_AGENT, useragent);
 
             if (validateOAuthHeader(ctx ,req, matchingResource)) {
-
+                ctx.channel().attr(WSO2_PROPERTIES).set(getApiProperties());
                 if (StringUtils.isNotEmpty(token)) {
                     ((FullHttpRequest) msg).headers().set(APIMgtGatewayConstants.WS_JWT_TOKEN_HEADER, token);
                 }
@@ -176,7 +181,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
 
                 // publish google analytics data
                 GoogleAnalyticsData.DataBuilder gaData = new GoogleAnalyticsData.DataBuilder(null, null, null, null)
-                        .setDocumentPath(uri).setDocumentHostName(DataPublisherUtil.getHostAddress()).setSessionControl(
+                        .setDocumentPath(fullRequestUri).setDocumentHostName(DataPublisherUtil.getHostAddress()).setSessionControl(
                                 "end").setCacheBuster(APIMgtGoogleAnalyticsUtils.getCacheBusterId()).setIPOverride(
                                 ctx.channel().remoteAddress().toString());
                 APIMgtGoogleAnalyticsUtils gaUtils = new APIMgtGoogleAnalyticsUtils();
@@ -223,11 +228,11 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
 
     private void setUris(FullHttpRequest req) throws URISyntaxException {
 
-        uri = req.getUri();
-        URI uriTemp = new URI(uri);
-        fullRequestUri = new URI(uriTemp.getScheme(), uriTemp.getAuthority(), uriTemp.getPath(), null,
-                                 uriTemp.getFragment()).toString();
-        fullRequestUri = this.fullRequestUri.endsWith("/") ?
+        fullRequestUri = req.getUri();
+        URI uriTemp = new URI(fullRequestUri);
+        fullRequestUri = new URI(uriTemp.getScheme(), uriTemp.getAuthority(), uriTemp.getPath(), null, uriTemp.getFragment())
+                .toString();
+        fullRequestUri = this.fullRequestUri.endsWith(URL_SEPARATOR) ?
                 fullRequestUri.substring(0, fullRequestUri.length() - 1) :
                 fullRequestUri;
         if (log.isDebugEnabled()) {
@@ -260,7 +265,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
             PrivilegedCarbonContext.getThreadLocalCarbonContext().setTenantDomain(tenantDomain, true);
             APIKeyValidationInfoDTO info;
             if (!req.headers().contains(HttpHeaders.AUTHORIZATION)) {
-                QueryStringDecoder decoder = new QueryStringDecoder(uri);
+                QueryStringDecoder decoder = new QueryStringDecoder(fullRequestUri);
                 Map<String, List<String>> requestMap = decoder.parameters();
                 if (requestMap.containsKey(APIConstants.AUTHORIZATION_QUERY_PARAM_DEFAULT)) {
                     req.headers().add(HttpHeaders.AUTHORIZATION, APIConstants.CONSUMER_KEY_SEGMENT + ' '
@@ -343,8 +348,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
                     info.setEndUserName(authenticationContext.getUsername());
                     info.setApiTier(authenticationContext.getApiTier());
 
-                    setKeyTypeAsChannelAttribute(ctx,info.getType());
-
+                   keyType = info.getType();
                     if (isDefaultVersion) {
                         version = authenticationContext.getApiVersion();
                     }
@@ -358,7 +362,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
                         cacheKey = WebsocketUtil.getAccessTokenCacheKey(apiKey, apiContext, matchingResource);
                         info = WebsocketUtil.validateCache(apiKey, cacheKey);
                         if (info != null) {
-                            setKeyTypeAsChannelAttribute(ctx,info.getType());
+                            keyType = info.getType();
                             infoDTO = info;
                             return info.isAuthorized();
                         }
@@ -372,6 +376,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
                     if (info == null || !info.isAuthorized()) {
                         return false;
                     }
+                    log.info("Api name ::: " + info.getApiName());
 //                    if (info.getApiName() != null && info.getApiName().contains("*")) {
 //                        String[] str = info.getApiName().split("\\*");
 //                        version = str[1];
@@ -382,7 +387,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
                         cacheKey = WebsocketUtil.getAccessTokenCacheKey(apiKey, apiContext, matchingResource);
                         WebsocketUtil.putCache(info, apiKey, cacheKey);
                     }
-                    setKeyTypeAsChannelAttribute(ctx,info.getType());
+                    keyType = info.getType();
                     token = info.getEndUserToken();
                     infoDTO = info;
                     return true;
@@ -395,13 +400,13 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
         }
     }
 
-    private void setKeyTypeAsChannelAttribute(ChannelHandlerContext ctx, String keyType) {
+    private Map<String, Object> getApiProperties() {
 
-        if (APIConstants.API_KEY_TYPE_PRODUCTION.equals(keyType)) {
-            ctx.channel().attr(WSO2_PROPERTIES).set(PRODUCTION_KEY);
-        } else if (APIConstants.API_KEY_TYPE_SANDBOX.equals(keyType)) {
-            ctx.channel().attr(WSO2_PROPERTIES).set(SANDBOX_KEY);
-        }
+        Map<String, Object> apiPropertiesMap = new HashMap();
+        apiPropertiesMap.put(RESTConstants.SYNAPSE_REST_API, apiName);
+        apiPropertiesMap.put(RESTConstants.PROCESSED_API, api);
+        apiPropertiesMap.put(APIConstants.API_KEY_TYPE, keyType);
+        return apiPropertiesMap;
     }
 
     private APIKeyValidationInfoDTO getApiKeyDataForWSClient(String key, String domain, String apiContextUri,
@@ -602,7 +607,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
     }
 
     private void removeTokenFromQuery(Map<String, List<String>> parameters) {
-        StringBuilder queryBuilder = new StringBuilder(uri.substring(0, uri.indexOf('?') + 1));
+        StringBuilder queryBuilder = new StringBuilder(fullRequestUri.substring(0, fullRequestUri.indexOf('?') + 1));
 
         for (Map.Entry<String, List<String>> entry : parameters.entrySet()) {
             if (!APIConstants.AUTHORIZATION_QUERY_PARAM_DEFAULT.equals(entry.getKey())) {
@@ -611,7 +616,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
         }
 
         // remove trailing '?' or '&' from the built string
-        uri = queryBuilder.substring(0, queryBuilder.length() - 1);
+        fullRequestUri = queryBuilder.substring(0, queryBuilder.length() - 1);
     }
 
     private SignedJWTInfo getSignedJwtInfo(String accessToken) throws ParseException {
@@ -647,59 +652,114 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
         return synCtx;
     }
 
-    private String getMatchingResource(MessageContext messageContext) {
+    private String getMatchingResource(ChannelHandlerContext ctx, MessageContext synCtx, FullHttpRequest req)
+            throws WebSocketApiException {
 
-        API selectedApi = getApi(fullRequestUri, messageContext);
+        API selectedApi = getApi(fullRequestUri, synCtx);
         if (selectedApi == null) {
-            handleError("No API found to dispatch the request");
+            handleError(ctx, "No matching API found to dispatch the request");
             return null;
         }
+        if (StringUtils.EMPTY.equals(selectedApi.getVersion())) {
+            log.info("Call to default Api");
+            // this is a call to default api
+            findAndUpdateApiName();
+            selectedApi = synCtx.getConfiguration().getAPI(apiName);
+            if (selectedApi == null) {
+                handleError(ctx, "API missing for default version");
+                return null;
+            }
+            reConstructFullUriWithVersion(selectedApi.getContext(), req, synCtx);
+        }
+
+        api = selectedApi;
+        apiContext = selectedApi.getContext();
+        //        synCtx.setProperty(RESTConstants.SYNAPSE_REST_API, apiName);
+        //        synCtx.setProperty(RESTConstants.PROCESSED_API, selectedApi);
+
         Resource selectedResource = null;
-        Utils.setSubRequestPath(selectedApi, messageContext);
-        Resource[] allAPIResources = selectedApi.getResources();
-        Set<Resource> acceptableResources = new LinkedHashSet<>(Arrays.asList(allAPIResources));
+        Utils.setSubRequestPath(selectedApi, synCtx);
+        Set<Resource> acceptableResources = new LinkedHashSet<>(Arrays.asList(selectedApi.getResources()));
         if (!acceptableResources.isEmpty()) {
             for (RESTDispatcher dispatcher : ApiUtils.getDispatchers()) {
-                Resource resource = dispatcher.findResource(messageContext, acceptableResources);
+                Resource resource = dispatcher.findResource(synCtx, acceptableResources);
                 if (resource != null) {
                     selectedResource = resource;
                     break;
                 }
             }
         }
-        //No matching resource found
         if (selectedResource == null) {
-            handleError("no matching resource 404 !");
+            handleError(ctx, "No matching resource found to dispatch the request");
         }
         String resource = selectedResource.getDispatcherHelper().getString();
-        log.info("Selected resource " + resource);
+        log.info("Selected resource " + resource); // todo - make as debug
         return resource;
     }
 
-    private void handleError(String error) {
+    private void findAndUpdateApiName() {
+
+        version = apiName.substring(apiName.lastIndexOf('_') + 2); // depends on naming convention of default api
+        log.info("Version of default corresponding api :" + version);
+        apiName = apiName.substring(0, apiName.length() - version.length() - 2) + ":v" + version;
+        log.info("New APi name : " + apiName);
+    }
+
+    private void reConstructFullUriWithVersion(String apiContext , FullHttpRequest req, MessageContext synCtx){
+
+        log.info("full request uri " + fullRequestUri);
+        StringBuilder newUrl = new StringBuilder();
+        int versionInsertionIndex = apiContext.split(URL_SEPARATOR).length - 2;
+        if (!MultitenantConstants.SUPER_TENANT_DOMAIN_NAME.equals(tenantDomain)) {
+            versionInsertionIndex += 2;
+        }
+        String[] uriParts = fullRequestUri.split(URL_SEPARATOR);
+        for (int index = 0; index < uriParts.length; index++) {
+            newUrl.append(URL_SEPARATOR);
+            newUrl.append(uriParts[index]);
+            if (index == versionInsertionIndex) {
+                newUrl.append(URL_SEPARATOR);
+                newUrl.append(version);
+            }
+        }
+        // updating url for request dispatch
+        fullRequestUri = newUrl.toString().substring(1);  // removing additional '/' at the beginning
+        req.setUri(fullRequestUri);
+        org.apache.axis2.context.MessageContext axis2MsgCtx = ((Axis2MessageContext) synCtx).getAxis2MessageContext();
+        axis2MsgCtx.setProperty(Constants.Configuration.TRANSPORT_IN_URL, fullRequestUri);
+        log.info("new url : " + fullRequestUri);
+    }
+
+    private void handleError(ChannelHandlerContext ctx, String error) throws WebSocketApiException {
+
         log.error(error, new Throwable());
+        FullHttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
+                                                                    HttpResponseStatus.BAD_REQUEST,
+                                                                    Unpooled.copiedBuffer(error, CharsetUtil.UTF_8));
+        httpResponse.headers().set("content-type", "text/plain; charset=UTF-8");
+        httpResponse.headers().set("content-length", httpResponse.content().readableBytes());
+        ctx.writeAndFlush(httpResponse);
+        throw new WebSocketApiException(error);
     }
 
     /**
-     * Get the api name.
+     * Get the name of the matching api for the request path.
      *
-     * @param contextPath The api context path
+     * @param requestPath The request path
      * @param synCtx      The Synapse Message Context
      * @return String The api name
      */
-    private API getApi(String contextPath, MessageContext synCtx) {
+    private API getApi(String requestPath, MessageContext synCtx) {
 
-        String apiName;
-        for (API api : synCtx.getEnvironment().getSynapseConfiguration().getAPIs()) {
-            if (ApiUtils.matchApiPath(contextPath, api.getContext())) {
+        log.info("inbound name : " + inboundName);
+        Collection<API> apis = synCtx.getEnvironment().getSynapseConfiguration().getAPIs(inboundName);
+        for (API api : apis) {
+            if (ApiUtils.matchApiPath(requestPath, api.getContext())) {
                 apiName = api.getName();
                 if (api.getVersionStrategy().getVersion() != null && !"".equals(api.getVersionStrategy().
                         getVersion())) {
                     apiName = apiName + ":v" + api.getVersionStrategy().getVersion();
                 }
-                synCtx.setProperty(RESTConstants.SYNAPSE_REST_API, apiName);
-                synCtx.setProperty(RESTConstants.PROCESSED_API, api);
-                apiContext = api.getContext();
                 version = api.getVersion();
                 return api;
             }
