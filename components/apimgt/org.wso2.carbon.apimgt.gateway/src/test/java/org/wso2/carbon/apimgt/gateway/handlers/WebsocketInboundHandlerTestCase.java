@@ -39,6 +39,7 @@ import org.powermock.modules.junit4.PowerMockRunner;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APISecurityException;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APISecurityUtils;
+import org.wso2.carbon.apimgt.gateway.handlers.websocket.WebSocketApiException;
 import org.wso2.carbon.apimgt.gateway.internal.ServiceReferenceHolder;
 import org.wso2.carbon.apimgt.gateway.throttling.publisher.ThrottleDataPublisher;
 import org.wso2.carbon.apimgt.gateway.utils.APIMgtGoogleAnalyticsUtils;
@@ -63,9 +64,9 @@ import org.wso2.carbon.utils.multitenancy.MultitenantUtils;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.SocketAddress;
+import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.util.concurrent.TimeUnit;
-
 import javax.cache.Cache;
 import javax.cache.CacheBuilder;
 import javax.cache.CacheConfiguration;
@@ -73,6 +74,7 @@ import javax.cache.CacheManager;
 import javax.cache.Caching;
 
 import static org.junit.Assert.fail;
+import static org.wso2.carbon.apimgt.gateway.handlers.websocket.WebSocketApiConstants.WS_ENDPOINT_NAME;
 import static org.wso2.carbon.apimgt.impl.APIConstants.API_KEY_VALIDATOR_WS_CLIENT;
 
 /**
@@ -199,9 +201,26 @@ public class WebsocketInboundHandlerTestCase {
         Mockito.when(headers.get(org.apache.http.HttpHeaders.USER_AGENT)).thenReturn(USER_AGENT);
         Mockito.when(fullHttpRequest.headers()).thenReturn(headers);
         WebsocketInboundHandler websocketInboundHandler1 = new WebsocketInboundHandler() {
+
             @Override
             protected String getRemoteIP(ChannelHandlerContext ctx) {
                 return "192.168.0.100";
+            }
+
+            @Override
+            protected String getInboundName(ChannelHandlerContext ctx) {
+                return WS_ENDPOINT_NAME;
+            }
+
+            @Override
+            protected String getMatchingResource(ChannelHandlerContext ctx, FullHttpRequest req)
+                    throws WebSocketApiException, AxisFault, URISyntaxException {
+                return "";
+            }
+
+            @Override
+            protected void setApiPropertiesToChannel(ChannelHandlerContext ctx){
+                // do nothing
             }
         };
         CacheConfiguration.Duration duration = new CacheConfiguration.Duration(TimeUnit.SECONDS,
@@ -262,7 +281,7 @@ public class WebsocketInboundHandlerTestCase {
         APIKeyValidationService apiKeyValidationService = Mockito.mock(APIKeyValidationService.class);
         WebsocketWSClient websocketWSClient = Mockito.mock(WebsocketWSClient.class);
         try {
-            PowerMockito.when(websocketWSClient.getAPIKeyData(TENANT_URL, "1.0", "587hfbt4i8ydno87ywq", "abc.com"))
+            PowerMockito.when(websocketWSClient.getAPIKeyData(TENANT_URL, "1.0", "587hfbt4i8ydno87ywq", "abc.com", ""))
                     .thenReturn(apiKeyValidationInfoDTO);
             PowerMockito.whenNew(WebsocketWSClient.class).withNoArguments().thenReturn(websocketWSClient);
             websocketInboundHandler1.channelRead(channelHandlerContext, fullHttpRequest);
@@ -342,6 +361,17 @@ public class WebsocketInboundHandlerTestCase {
             protected String getRemoteIP(ChannelHandlerContext ctx) {
                 return "192.168.0.100";
             }
+
+            @Override
+            protected String getInboundName(ChannelHandlerContext ctx) {
+                return WS_ENDPOINT_NAME;
+            }
+
+            @Override
+            protected String getMatchingResource(ChannelHandlerContext ctx, FullHttpRequest req)
+                    throws WebSocketApiException, AxisFault, URISyntaxException {
+                return "";
+            }
         };
         //test for Invalid Credentials error
         try {
@@ -372,7 +402,7 @@ public class WebsocketInboundHandlerTestCase {
         APIKeyValidationInfoDTO apiKeyValidationInfoDTO = Mockito.mock(APIKeyValidationInfoDTO.class);
         Mockito.when(apiKeyValidationInfoDTO.isAuthorized()).thenReturn(false);
         PowerMockito.when(WebsocketUtil.isGatewayTokenCacheEnabled()).thenReturn(true);
-        PowerMockito.when(WebsocketUtil.getAccessTokenCacheKey(API_KEY, TENANT_URL)).thenReturn(CACHE_KEY);
+        PowerMockito.when(WebsocketUtil.getAccessTokenCacheKey(API_KEY, TENANT_URL, "")).thenReturn(CACHE_KEY);
         PowerMockito.when(WebsocketUtil.validateCache(API_KEY, CACHE_KEY)).thenReturn(apiKeyValidationInfoDTO);
         PowerMockito.when(WebsocketUtil.isRemoveOAuthHeadersFromOutMessage()).thenReturn(true);
 //        PowerMockito.when(WebsocketUtil.validateCache(api)).thenReturn(true);
@@ -386,9 +416,9 @@ public class WebsocketInboundHandlerTestCase {
         APIKeyValidationService apiKeyValidationServiceStub = Mockito.mock(APIKeyValidationService.class);
         WebsocketWSClient websocketWSClient = Mockito.mock(WebsocketWSClient.class);
         try {
-            PowerMockito.when(websocketWSClient.getAPIKeyData(SUPER_TENANT_URL, "1.0", "587hfbt4i8ydno87ywq","carbon" +
-                    ".super"))
-                    .thenReturn(apiKeyValidationInfoDTO);
+            PowerMockito.when(websocketWSClient.getAPIKeyData(SUPER_TENANT_URL, "1.0", "587hfbt4i8ydno87ywq",
+                                                              "carbon" + ".super", "")).thenReturn(
+                    apiKeyValidationInfoDTO);
             PowerMockito.whenNew(WebsocketWSClient.class).withAnyArguments().thenReturn(websocketWSClient);
             websocketInboundHandler1.channelRead(channelHandlerContext, fullHttpRequest);
             fail("Expected APISecurityException is not thrown (Invalid Credentials) when KeyValidatorClientType is provided.");
@@ -400,11 +430,19 @@ public class WebsocketInboundHandlerTestCase {
             APIKeyValidationInfoDTO info = new APIKeyValidationInfoDTO();
 
             @Override
-            protected APIKeyValidationInfoDTO getApiKeyDataForWSClient(String key, String domain,
-                                                                       String apiKey,
-                                                                       String tenantDomain)
-                    throws APISecurityException {
+            protected APIKeyValidationInfoDTO getApiKeyDataForWSClient(String key, String domain, String apiContextUri,
+                                                                       String apiVersion, String matchingResource) {
                 return info;
+            }
+
+            @Override
+            protected String getInboundName(ChannelHandlerContext ctx) {
+                return WS_ENDPOINT_NAME;
+            }
+
+            @Override
+            protected String getMatchingResource(ChannelHandlerContext ctx, FullHttpRequest req) {
+                return "";
             }
         };
 
@@ -423,9 +461,8 @@ public class WebsocketInboundHandlerTestCase {
             APIKeyValidationInfoDTO info = new APIKeyValidationInfoDTO();
 
             @Override
-            protected APIKeyValidationInfoDTO getApiKeyDataForWSClient(String key, String domain,
-                                                                       String apiKey,
-                                                                       String tenantDomain)
+            protected APIKeyValidationInfoDTO getApiKeyDataForWSClient(String key, String domain, String apiKey,
+                                                                       String tenantDomain, String matchingResource)
                     throws APISecurityException {
                 info.setAuthorized(true);
                 info.setApiName("Phoneverify*1.0");
@@ -436,6 +473,22 @@ public class WebsocketInboundHandlerTestCase {
             @Override
             protected String getRemoteIP(ChannelHandlerContext ctx) {
                 return "192.168.0.100";
+            }
+
+            @Override
+            protected String getInboundName(ChannelHandlerContext ctx) {
+                return WS_ENDPOINT_NAME;
+            }
+
+            @Override
+            protected String getMatchingResource(ChannelHandlerContext ctx, FullHttpRequest req)
+                    throws WebSocketApiException, AxisFault, URISyntaxException {
+                return "";
+            }
+
+            @Override
+            protected void setApiPropertiesToChannel(ChannelHandlerContext ctx){
+                // do nothing
             }
         };
         PowerMockito.mockStatic(org.wso2.carbon.apimgt.impl.internal.ServiceReferenceHolder.class);

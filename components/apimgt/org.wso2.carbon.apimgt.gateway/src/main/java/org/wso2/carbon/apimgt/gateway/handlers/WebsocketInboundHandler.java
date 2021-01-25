@@ -107,7 +107,8 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
     private static final Log log = LogFactory.getLog(WebsocketInboundHandler.class);
     private String tenantDomain;
     private static APIMgtUsageDataPublisher usageDataPublisher;
-    private String requestPath;
+    private String fullRequestPath;
+    private String requestPath; // request path without query param section
     private String version;
     private APIKeyValidationInfoDTO infoDTO = new APIKeyValidationInfoDTO();
     private io.netty.handler.codec.http.HttpHeaders headers = new DefaultHttpHeaders();
@@ -159,7 +160,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
             FullHttpRequest req = (FullHttpRequest) msg;
 
             setUris(req);
-            inboundName = ctx.channel().pipeline().get("ssl") != null ? WS_SECURED_ENDPOINT_NAME : WS_ENDPOINT_NAME;
+            inboundName = getInboundName(ctx);
             setTenantDomain(requestPath);
             String matchingResource = getMatchingResource(ctx, req);
 
@@ -172,7 +173,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
             headers.add(HttpHeaders.USER_AGENT, useragent);
 
             if (validateOAuthHeader(req, matchingResource)) {
-                ctx.channel().attr(WSO2_PROPERTIES).set(getApiProperties());
+                setApiPropertiesToChannel(ctx);
                 if (StringUtils.isNotEmpty(token)) {
                     ((FullHttpRequest) msg).headers().set(APIMgtGatewayConstants.WS_JWT_TOKEN_HEADER, token);
                 }
@@ -180,7 +181,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
 
                 // publish google analytics data
                 GoogleAnalyticsData.DataBuilder gaData = new GoogleAnalyticsData.DataBuilder(null, null, null, null)
-                        .setDocumentPath(requestPath).setDocumentHostName(DataPublisherUtil.getHostAddress())
+                        .setDocumentPath(fullRequestPath).setDocumentHostName(DataPublisherUtil.getHostAddress())
                         .setSessionControl("end").setCacheBuster(APIMgtGoogleAnalyticsUtils.getCacheBusterId())
                         .setIPOverride(ctx.channel().remoteAddress().toString());
                 APIMgtGoogleAnalyticsUtils gaUtils = new APIMgtGoogleAnalyticsUtils();
@@ -197,7 +198,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
                 httpResponse.headers().set("content-length", httpResponse.content().readableBytes());
                 ctx.writeAndFlush(httpResponse);
                 if (log.isDebugEnabled()) {
-                    log.debug("Authentication Failure for the websocket context: " + requestPath);
+                    log.debug("Authentication Failure for the websocket context: " + apiContext);
                 }
                 throw new APISecurityException(APISecurityConstants.API_AUTH_INVALID_CREDENTIALS,
                                                APISecurityConstants.API_AUTH_INVALID_CREDENTIALS_MESSAGE);
@@ -233,15 +234,14 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
      */
     private void setUris(FullHttpRequest req) throws URISyntaxException {
 
-        requestPath = req.getUri();
-        URI uriTemp = new URI(requestPath);
+        fullRequestPath = req.uri();
+        URI uriTemp = new URI(fullRequestPath);
+
         requestPath = new URI(uriTemp.getScheme(), uriTemp.getAuthority(), uriTemp.getPath(), null,
-                              uriTemp.getFragment()).toString();
-        requestPath = requestPath.endsWith(URL_SEPARATOR) ?
-                requestPath.substring(0, requestPath.length() - 1) :
-                requestPath;
+                                  uriTemp.getFragment()).toString();
+        requestPath = ApiUtils.trimSlashes(requestPath);
         if (log.isDebugEnabled()) {
-            log.debug("Websocket API requestPath = " + requestPath);
+            log.debug("Websocket API fullRequestPath = " + fullRequestPath);
         }
     }
 
@@ -268,12 +268,13 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
             PrivilegedCarbonContext.getThreadLocalCarbonContext().setTenantDomain(tenantDomain, true);
             APIKeyValidationInfoDTO info;
             if (!req.headers().contains(HttpHeaders.AUTHORIZATION)) {
-                QueryStringDecoder decoder = new QueryStringDecoder(requestPath);
+                QueryStringDecoder decoder = new QueryStringDecoder(fullRequestPath);
                 Map<String, List<String>> requestMap = decoder.parameters();
                 if (requestMap.containsKey(APIConstants.AUTHORIZATION_QUERY_PARAM_DEFAULT)) {
                     req.headers().add(HttpHeaders.AUTHORIZATION, APIConstants.CONSUMER_KEY_SEGMENT + ' '
                                     + requestMap.get(APIConstants.AUTHORIZATION_QUERY_PARAM_DEFAULT).get(0));
                     removeTokenFromQuery(requestMap);
+                    req.setUri(fullRequestPath);
                 } else {
                     log.error("No Authorization Header or access_token query parameter present");
                     return false;
@@ -383,16 +384,19 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
         }
     }
 
-    private Map<String, Object> getApiProperties() {
+    protected String getInboundName(ChannelHandlerContext ctx) {
+        return ctx.channel().pipeline().get("ssl") != null ? WS_SECURED_ENDPOINT_NAME : WS_ENDPOINT_NAME;
+    }
 
+    protected void setApiPropertiesToChannel(ChannelHandlerContext ctx) {
         Map<String, Object> apiPropertiesMap = new HashMap();
         apiPropertiesMap.put(RESTConstants.SYNAPSE_REST_API, apiName);
         apiPropertiesMap.put(RESTConstants.PROCESSED_API, api);
         apiPropertiesMap.put(APIConstants.API_KEY_TYPE, keyType);
-        return apiPropertiesMap;
+        ctx.channel().attr(WSO2_PROPERTIES).set(apiPropertiesMap);
     }
 
-    private APIKeyValidationInfoDTO getApiKeyDataForWSClient(String key, String domain, String apiContextUri,
+    protected APIKeyValidationInfoDTO getApiKeyDataForWSClient(String key, String domain, String apiContextUri,
                                                              String apiVersion, String matchingResource)
             throws APISecurityException {
 
@@ -489,7 +493,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Publish reuqest event to analytics server
+     * Publish request event to analytics server
      *
      * @param clientIp       client's IP Address
      * @param isThrottledOut request is throttled out or not
@@ -514,7 +518,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
             requestPublisherDTO.setUserIp(clientIp);
             requestPublisherDTO.setApplicationConsumerKey(infoDTO.getConsumerKey());
             //context will always be empty as this method will call only for WebSocketFrame and url is null
-            requestPublisherDTO.setApiContext(requestPath);
+            requestPublisherDTO.setApiContext(apiContext);
             requestPublisherDTO.setThrottledOut(isThrottledOut);
             requestPublisherDTO.setApiHostname(DataPublisherUtil.getHostAddress());
             requestPublisherDTO.setApiMethod("-");
@@ -569,7 +573,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
             //throttlePublisherDTO.setApplicationConsumerKey(infoDTO.getConsumerKey());
             throttlePublisherDTO.setApiname(infoDTO.getApiName());
             throttlePublisherDTO.setVersion(infoDTO.getApiName() + ':' + version);
-            throttlePublisherDTO.setContext(requestPath);
+            throttlePublisherDTO.setContext(apiContext);
             throttlePublisherDTO.setApiCreator(infoDTO.getApiPublisher());
             throttlePublisherDTO.setApiCreatorTenantDomain(MultitenantUtils.getTenantDomain(infoDTO.getApiPublisher()));
             throttlePublisherDTO.setApplicationName(infoDTO.getApplicationName());
@@ -590,7 +594,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
     }
 
     private void removeTokenFromQuery(Map<String, List<String>> parameters) {
-        StringBuilder queryBuilder = new StringBuilder(requestPath.substring(0, requestPath.indexOf('?') + 1));
+        StringBuilder queryBuilder = new StringBuilder(fullRequestPath.substring(0, fullRequestPath.indexOf('?') + 1));
 
         for (Map.Entry<String, List<String>> entry : parameters.entrySet()) {
             if (!APIConstants.AUTHORIZATION_QUERY_PARAM_DEFAULT.equals(entry.getKey())) {
@@ -599,7 +603,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
         }
 
         // remove trailing '?' or '&' from the built string
-        requestPath = queryBuilder.substring(0, queryBuilder.length() - 1);
+        fullRequestPath = queryBuilder.substring(0, queryBuilder.length() - 1);
     }
 
     private SignedJWTInfo getSignedJwtInfo(String accessToken) throws ParseException {
@@ -630,16 +634,16 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
 
         MessageContext synCtx = WebsocketUtil.getSynapseMessageContext(tenantDomain);
         org.apache.axis2.context.MessageContext msgCtx = ((Axis2MessageContext) synCtx).getAxis2MessageContext();
-        msgCtx.setIncomingTransportName(new URI(requestPath).getScheme());
-        msgCtx.setProperty(Constants.Configuration.TRANSPORT_IN_URL, requestPath);
+        msgCtx.setIncomingTransportName(new URI(fullRequestPath).getScheme());
+        msgCtx.setProperty(Constants.Configuration.TRANSPORT_IN_URL, fullRequestPath);
         return synCtx;
     }
 
-    private String getMatchingResource(ChannelHandlerContext ctx, FullHttpRequest req)
+    protected String getMatchingResource(ChannelHandlerContext ctx, FullHttpRequest req)
             throws WebSocketApiException, AxisFault, URISyntaxException {
 
         MessageContext synCtx = getMessageContext(tenantDomain);
-        API selectedApi = getApi(requestPath, synCtx);
+        API selectedApi = getApi(fullRequestPath, synCtx);
         if (selectedApi == null) {
             handleError(ctx, "No matching API found to dispatch the request");
             return null;
@@ -692,13 +696,13 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
 
     private void reConstructFullUriWithVersion(String apiContext, FullHttpRequest req, MessageContext synCtx) {
 
-        log.info("full request uri " + requestPath);
+        log.info("full request uri " + fullRequestPath);
         StringBuilder newUrl = new StringBuilder();
         int versionInsertionIndex = apiContext.split(URL_SEPARATOR).length - 2;
         if (!MultitenantConstants.SUPER_TENANT_DOMAIN_NAME.equals(tenantDomain)) {
             versionInsertionIndex += 2;
         }
-        String[] uriParts = requestPath.split(URL_SEPARATOR);
+        String[] uriParts = fullRequestPath.split(URL_SEPARATOR);
         for (int index = 0; index < uriParts.length; index++) {
             newUrl.append(URL_SEPARATOR);
             newUrl.append(uriParts[index]);
@@ -708,14 +712,14 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
             }
         }
         // updating url for request dispatch
-        requestPath = newUrl.toString().substring(1);  // removing additional '/' at the beginning
-        req.setUri(requestPath);
+        fullRequestPath = newUrl.toString().substring(1);  // removing additional '/' at the beginning
+        req.setUri(fullRequestPath);
         org.apache.axis2.context.MessageContext axis2MsgCtx = ((Axis2MessageContext) synCtx).getAxis2MessageContext();
-        axis2MsgCtx.setProperty(Constants.Configuration.TRANSPORT_IN_URL, requestPath);
+        axis2MsgCtx.setProperty(Constants.Configuration.TRANSPORT_IN_URL, fullRequestPath);
         if (log.isDebugEnabled()) {
-            log.debug("Updated full request uri : " + requestPath);
+            log.debug("Updated full request uri : " + fullRequestPath);
         }
-        log.info("new url : " + requestPath);
+        log.info("new url : " + fullRequestPath);
     }
 
     private void handleError(ChannelHandlerContext ctx, String error) throws WebSocketApiException {
