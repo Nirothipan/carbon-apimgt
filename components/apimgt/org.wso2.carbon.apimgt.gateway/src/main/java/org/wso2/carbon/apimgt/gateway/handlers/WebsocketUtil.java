@@ -17,9 +17,6 @@
  */
 package org.wso2.carbon.apimgt.gateway.handlers;
 
-import org.apache.axiom.om.OMAbstractFactory;
-import org.apache.axiom.soap.SOAPEnvelope;
-import org.apache.axiom.soap.SOAPFactory;
 import org.apache.axiom.util.UIDGenerator;
 import org.apache.axis2.AxisFault;
 import org.apache.axis2.context.ConfigurationContext;
@@ -172,22 +169,14 @@ public class WebsocketUtil {
 		return accessToken + ':' + apiContext + ':' + matchingResource;
 	}
 
-	public static MessageContext getSynapseMessageContext(String tenantDomain) throws AxisFault {
-
-		MessageContext synCtx = createSynapseMessageContext(tenantDomain);
-		//		synCtx.setProperty(SynapseConstants.IS_INBOUND, true);
-		//		((Axis2MessageContext) synCtx).getAxis2MessageContext().setProperty(SynapseConstants.IS_INBOUND, true);
-		return synCtx;
-	}
-
-	private static MessageContext createSynapseMessageContext(String tenantDomain) throws AxisFault {
+	static MessageContext getSynapseMessageContext(String tenantDomain) throws AxisFault {
 
 		org.apache.axis2.context.MessageContext axis2MsgCtx = createAxis2MessageContext();
 		ServiceContext svcCtx = new ServiceContext();
 		OperationContext opCtx = new OperationContext(new InOutAxisOperation(), svcCtx);
 		axis2MsgCtx.setServiceContext(svcCtx);
 		axis2MsgCtx.setOperationContext(opCtx);
-		if (tenantDomain != null && !tenantDomain.equals(MultitenantConstants.SUPER_TENANT_DOMAIN_NAME)) {
+		if (!MultitenantConstants.SUPER_TENANT_DOMAIN_NAME.equals(tenantDomain)) {
 			ConfigurationContext tenantConfigCtx = TenantAxisUtils.getTenantConfigurationContext(tenantDomain,
 			                                                                                     axis2MsgCtx
 					                                                                                     .getConfigurationContext());
@@ -196,9 +185,9 @@ public class WebsocketUtil {
 		} else {
 			axis2MsgCtx.setProperty(MultitenantConstants.TENANT_DOMAIN, MultitenantConstants.SUPER_TENANT_DOMAIN_NAME);
 		}
-		SOAPFactory fac = OMAbstractFactory.getSOAP11Factory();
-		SOAPEnvelope envelope = fac.getDefaultEnvelope();
-		axis2MsgCtx.setEnvelope(envelope);
+		//		SOAPFactory fac = OMAbstractFactory.getSOAP11Factory();
+		//		SOAPEnvelope envelope = fac.getDefaultEnvelope();
+		//		axis2MsgCtx.setEnvelope(envelope);
 		return MessageContextCreatorForAxis2.getSynapseMessageContext(axis2MsgCtx);
 	}
 

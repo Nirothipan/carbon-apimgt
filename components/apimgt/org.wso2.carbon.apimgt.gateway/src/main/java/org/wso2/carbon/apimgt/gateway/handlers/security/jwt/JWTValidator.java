@@ -35,6 +35,7 @@ import org.wso2.carbon.apimgt.gateway.handlers.security.APISecurityConstants;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APISecurityException;
 import org.wso2.carbon.apimgt.gateway.handlers.security.AuthenticationContext;
 import org.wso2.carbon.apimgt.gateway.handlers.security.jwt.generator.AbstractAPIMgtGatewayJWTGenerator;
+import org.wso2.carbon.apimgt.gateway.handlers.websocket.WebSocketApiConstants;
 import org.wso2.carbon.apimgt.gateway.internal.ServiceReferenceHolder;
 import org.wso2.carbon.apimgt.gateway.jwt.RevokedJWTDataHolder;
 import org.wso2.carbon.apimgt.gateway.utils.GatewayUtils;
@@ -261,16 +262,16 @@ public class JWTValidator {
      * Authenticates the given WebSocket handshake request with a JWT token to see if an API consumer is allowed to
      * access a particular API or not.
      *
-     * @param signedJWTInfo   The JWT token sent with the API request
-     * @param apiContext The context of the invoked API
-     * @param apiVersion The version of the invoked API
+     * @param signedJWTInfo    The JWT token sent with the API request
+     * @param apiContext       The context of the invoked API
+     * @param apiVersion       The version of the invoked API
      * @param matchingResource template of matching api resource
      * @return an AuthenticationContext object which contains the authentication information
      * @throws APISecurityException in case of authentication failure
      */
     @MethodStats
     public AuthenticationContext authenticateForWebSocket(SignedJWTInfo signedJWTInfo, String apiContext,
-                                                          String apiVersion , String matchingResource)
+                                                          String apiVersion, String matchingResource)
             throws APISecurityException {
 
         String tokenSignature = signedJWTInfo.getSignedJWT().getSignature().toString();
@@ -304,7 +305,9 @@ public class JWTValidator {
                         apiKeyValidationInfoDTO.isAuthorized());
             }
             if (apiKeyValidationInfoDTO.isAuthorized()) {
-                validateScopes(apiContext, apiVersion, matchingResource, "WS", jwtValidationInfo, signedJWTInfo);
+                validateScopes(apiContext, apiVersion, matchingResource,
+                               WebSocketApiConstants.WEBSOCKET_DUMMY_HTTP_METHOD_NAME, jwtValidationInfo,
+                               signedJWTInfo);
                 log.debug("JWT authentication successful. user: " + apiKeyValidationInfoDTO.getEndUserName());
                 String endUserToken = null;
                 JWTInfoDto jwtInfoDto;
