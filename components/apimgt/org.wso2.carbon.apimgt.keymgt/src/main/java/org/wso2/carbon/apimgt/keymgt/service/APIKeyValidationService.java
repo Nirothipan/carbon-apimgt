@@ -473,7 +473,7 @@ public class APIKeyValidationService {
                                                            String tenantDomain, List<String> keyManagers,
                                                            String matchingResource)
             throws APIKeyMgtException, APIManagementException {
-        boolean defaultVersionInvoked = false;
+        //boolean defaultVersionInvoked = false;
         APIKeyValidationInfoDTO info = new APIKeyValidationInfoDTO();
         info.setAuthorized(false);
         TokenValidationContext validationContext = new TokenValidationContext();
@@ -494,13 +494,13 @@ public class APIKeyValidationService {
                 state = keyValidationHandler.validateScopes(validationContext);
             }
             if (state) {
-                if (APIConstants.DEFAULT_WEBSOCKET_VERSION.equals(version)) {
-                    version = info.getApiVersion();
-                    defaultVersionInvoked = true;
-                }
-                if (defaultVersionInvoked) {
-                    validationContext.getValidationInfoDTO().setApiName(info.getApiName() + "*" + version);
-                }
+//                if (APIConstants.DEFAULT_WEBSOCKET_VERSION.equals(version)) {
+//                    version = info.getApiVersion();
+//                    defaultVersionInvoked = true;
+//                }
+//                if (defaultVersionInvoked) {
+//                    validationContext.getValidationInfoDTO().setApiName(info.getApiName() + "*" + version);
+//                }
                 if (APIKeyMgtDataHolder.isJwtGenerationEnabled() &&
                         validationContext.getValidationInfoDTO().getEndUserName() != null
                         && !validationContext.isCacheHit()) {

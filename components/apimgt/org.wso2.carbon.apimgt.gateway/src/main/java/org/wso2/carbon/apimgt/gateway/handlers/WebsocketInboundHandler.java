@@ -162,7 +162,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
             setUris(req);
             inboundName = ctx.channel().pipeline().get("ssl") != null ? WS_SECURED_ENDPOINT_NAME : WS_ENDPOINT_NAME  ;
             setTenantDomain(fullRequestUri);
-            String matchingResource = getMatchingResource(ctx, getMessageContext(tenantDomain), req);
+            String matchingResource = getMatchingResource(ctx, req);
 
             String useragent = req.headers().get(HttpHeaders.USER_AGENT);
 
@@ -313,20 +313,20 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
                     }
                 }
                 // Find the authentication scheme based on the token type
-                String apiVersion = version;
-                boolean isDefaultVersion = false;
-
-                // TODO - check this
-                if ((fullRequestUri.startsWith("/" + version)
-                        || fullRequestUri.startsWith("/t/" + tenantDomain + "/" + version))) {
-                    apiVersion = APIConstants.DEFAULT_WEBSOCKET_VERSION;
-                    isDefaultVersion = true;
-                }
+//                String apiVersion = version;
+//                boolean isDefaultVersion = false;
+//
+//                // TODO - check this
+//                if ((fullRequestUri.startsWith("/" + version)
+//                        || fullRequestUri.startsWith("/t/" + tenantDomain + "/" + version))) {
+//                    apiVersion = APIConstants.DEFAULT_WEBSOCKET_VERSION;
+//                    isDefaultVersion = true;
+//                }
                 if (isJwtToken) {
                     log.debug("The token was identified as a JWT token");
 
                     AuthenticationContext authenticationContext = new JWTValidator(new APIKeyValidator()).
-                            authenticateForWebSocket(signedJWTInfo, apiContext, apiVersion, matchingResource);
+                            authenticateForWebSocket(signedJWTInfo, apiContext, version, matchingResource);
                     if (authenticationContext == null || !authenticationContext.isAuthenticated()) {
                         return false;
                     }
@@ -349,9 +349,9 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
                     info.setApiTier(authenticationContext.getApiTier());
 
                    keyType = info.getType();
-                    if (isDefaultVersion) {
-                        version = authenticationContext.getApiVersion();
-                    }
+//                    if (isDefaultVersion) {
+//                        version = authenticationContext.getApiVersion();
+//                    }
 
                     infoDTO = info;
                     return authenticationContext.isAuthenticated();
@@ -369,14 +369,14 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
                     }
                     String keyValidatorClientType = APISecurityUtils.getKeyValidatorClientType();
                     if (APIConstants.API_KEY_VALIDATOR_WS_CLIENT.equals(keyValidatorClientType)) {
-                        info = getApiKeyDataForWSClient(apiKey, tenantDomain, apiContext, apiVersion, matchingResource);
+                        info = getApiKeyDataForWSClient(apiKey, tenantDomain, apiContext, version, matchingResource);
                     } else {
                         return false;
                     }
                     if (info == null || !info.isAuthorized()) {
                         return false;
                     }
-                    log.info("Api name ::: " + info.getApiName());
+                    log.info("Api name ::::::::::::::::::::::::::::::::::::::::: " + info.getApiName());
 //                    if (info.getApiName() != null && info.getApiName().contains("*")) {
 //                        String[] str = info.getApiName().split("\\*");
 //                        version = str[1];
@@ -652,9 +652,10 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
         return synCtx;
     }
 
-    private String getMatchingResource(ChannelHandlerContext ctx, MessageContext synCtx, FullHttpRequest req)
-            throws WebSocketApiException {
+    private String getMatchingResource(ChannelHandlerContext ctx, FullHttpRequest req)
+            throws WebSocketApiException, AxisFault, URISyntaxException {
 
+        MessageContext synCtx = getMessageContext(tenantDomain);
         API selectedApi = getApi(fullRequestUri, synCtx);
         if (selectedApi == null) {
             handleError(ctx, "No matching API found to dispatch the request");
@@ -727,6 +728,9 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
         req.setUri(fullRequestUri);
         org.apache.axis2.context.MessageContext axis2MsgCtx = ((Axis2MessageContext) synCtx).getAxis2MessageContext();
         axis2MsgCtx.setProperty(Constants.Configuration.TRANSPORT_IN_URL, fullRequestUri);
+        if (log.isDebugEnabled()) {
+            log.debug("Updated full request uri : " + fullRequestUri);
+        }
         log.info("new url : " + fullRequestUri);
     }
 
