@@ -22,9 +22,17 @@ package org.wso2.carbon.apimgt.gateway.handlers.streaming.sse;
 import org.apache.axis2.Constants;
 import org.apache.synapse.MessageContext;
 import org.apache.synapse.core.axis2.Axis2MessageContext;
+import org.apache.synapse.rest.RESTConstants;
+import org.apache.synapse.transport.passthru.PassThroughConstants;
+import org.wso2.carbon.apimgt.gateway.handlers.analytics.collectors.GenericRequestDataCollector;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APIAuthenticationHandler;
+import org.wso2.carbon.apimgt.gateway.handlers.security.APISecurityUtils;
 import org.wso2.carbon.apimgt.gateway.handlers.security.AuthenticationContext;
 import org.wso2.carbon.apimgt.impl.APIConstants;
+import org.wso2.carbon.apimgt.impl.dto.VerbInfoDTO;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.apache.axis2.Constants.Configuration.HTTP_METHOD;
 import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConstants.SSE_THROTTLE_DTO;
@@ -34,7 +42,7 @@ import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConsta
  */
 public class SseApiHandler extends APIAuthenticationHandler {
 
-    //private GenericRequestDataCollector dataCollector = new GenericRequestDataCollector();
+    private GenericRequestDataCollector dataCollector = new GenericRequestDataCollector();
 
     @Override
     public boolean handleRequest(MessageContext synCtx) {
@@ -46,20 +54,34 @@ public class SseApiHandler extends APIAuthenticationHandler {
         axisCtx.setProperty(Constants.Configuration.HTTP_METHOD, httpVerb);
         synCtx.setProperty(org.wso2.carbon.apimgt.gateway.handlers.analytics.Constants.SKIP_DEFAULT_METRICS_PUBLISHING,
                            true);
-        prepareThrottleData(synCtx);
+        if (isAuthenticated) {
+            prepareThrottleData(synCtx);
+            axisCtx.setProperty(PassThroughConstants.SYNAPSE_ARTIFACT_TYPE, APIConstants.API_TYPE_SSE);
+        }
         publishSubscriptionEvent(synCtx);
         return isAuthenticated;
     }
 
     private void prepareThrottleData(MessageContext synCtx) {
 
-        AuthenticationContext authenticationContext = (AuthenticationContext) synCtx.getProperty("xxxxx");
-        ThrottleDTO throttleDTO = new ThrottleDTO(authenticationContext);
-        synCtx.setProperty(SSE_THROTTLE_DTO, throttleDTO);
+        org.apache.axis2.context.MessageContext axis2MC = ((Axis2MessageContext) synCtx).
+                getAxis2MessageContext();
+        AuthenticationContext authenticationContext = APISecurityUtils.getAuthenticationContext(synCtx);
+        String apiContext = (String) synCtx.getProperty(RESTConstants.REST_API_CONTEXT);
+        String apiVersion = (String) synCtx.getProperty(RESTConstants.SYNAPSE_REST_API_VERSION);
+        List<VerbInfoDTO> verbInfoList = (List<VerbInfoDTO>) synCtx.getProperty(APIConstants.VERB_INFO_DTO);
+        String resourceLevelThrottleKey = null;
+        if (verbInfoList != null) {
+            // for sse, there will be only one verb info list
+            resourceLevelThrottleKey = verbInfoList.get(0).getRequestKey();
+        }
+        ThrottleDTO throttleDTO = new ThrottleDTO(authenticationContext, apiContext, apiVersion,
+                                                  resourceLevelThrottleKey);
+        axis2MC.setProperty(SSE_THROTTLE_DTO, throttleDTO);
     }
 
     private void publishSubscriptionEvent(MessageContext synCtx) {
-     //   dataCollector.collectData(synCtx);
+        //   dataCollector.collectData(synCtx);
     }
 
 }

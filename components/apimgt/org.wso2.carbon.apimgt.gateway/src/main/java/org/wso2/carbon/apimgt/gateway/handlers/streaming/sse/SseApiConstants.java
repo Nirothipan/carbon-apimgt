@@ -20,6 +20,6 @@ package org.wso2.carbon.apimgt.gateway.handlers.streaming.sse;
 
 public class SseApiConstants {
 
-    public static final String SSE_THROTTLE_DTO = "SSE_THROTTLE_DTO";
+    public static final String SSE_THROTTLE_DTO = "sse_throttle_dto";
 
 }
