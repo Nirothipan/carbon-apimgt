@@ -28,7 +28,7 @@ import org.wso2.carbon.databridge.agent.DataPublisher;
 public class StreamingApiThrottleDataPublisher {
 
     private static final Log log = LogFactory.getLog(StreamingApiThrottleDataPublisher.class);
-    private static final String THROTLLE_STREAM_ID = "org.wso2.throttle.request.stream:1.0.0";
+    private static final String THROTTLE_STREAM_ID = "org.wso2.throttle.request.stream:1.0.0";
 
     public void publishNonThrottledEvent(int eventCount, String applicationLevelThrottleKey,
                                          String applicationLevelTier, String apiLevelThrottleKey, String apiLevelTier,
@@ -45,7 +45,7 @@ public class StreamingApiThrottleDataPublisher {
                         properties.toString() };
 
         org.wso2.carbon.databridge.commons.Event event = new org.wso2.carbon.databridge.commons.Event(
-                THROTLLE_STREAM_ID, System.currentTimeMillis(), null, null, objects);
+                THROTTLE_STREAM_ID, System.currentTimeMillis(), null, null, objects);
 
         ThrottleDataPublisher throttleDataPublisher = ServiceReferenceHolder.getInstance().getThrottleDataPublisher();
         if (throttleDataPublisher != null) {

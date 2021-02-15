@@ -27,6 +27,7 @@ import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APIAuthenticationHandler;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APISecurityUtils;
 import org.wso2.carbon.apimgt.gateway.handlers.security.AuthenticationContext;
+import org.wso2.carbon.apimgt.gateway.utils.GatewayUtils;
 import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.dto.VerbInfoDTO;
 
@@ -74,8 +75,9 @@ public class SseApiHandler extends APIAuthenticationHandler {
             resourceLevelThrottleKey = verbInfoDTO.getRequestKey();
             resourceLevelTier = verbInfoDTO.getThrottling();
         }
+        String remoteIP = GatewayUtils.getIp(axis2MC);
         ThrottleDTO throttleDTO = new ThrottleDTO(authenticationContext, apiContext, apiVersion,
-                                                  resourceLevelThrottleKey, resourceLevelTier);
+                                                  resourceLevelThrottleKey, resourceLevelTier, remoteIP);
         axis2MC.setProperty(SSE_THROTTLE_DTO, throttleDTO);
     }
 

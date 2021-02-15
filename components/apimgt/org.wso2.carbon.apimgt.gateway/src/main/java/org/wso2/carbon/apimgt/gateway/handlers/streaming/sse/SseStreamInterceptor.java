@@ -26,7 +26,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.passthru.DefaultStreamInterceptor;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.json.JSONObject;
-import org.wso2.carbon.apimgt.gateway.handlers.analytics.collectors.GenericRequestDataCollector;
 import org.wso2.carbon.apimgt.gateway.handlers.streaming.throttling.StreamingApiThrottleDataPublisher;
 import org.wso2.carbon.apimgt.gateway.handlers.throttling.APIThrottleConstants;
 import org.wso2.carbon.apimgt.gateway.internal.ServiceReferenceHolder;
@@ -53,16 +52,15 @@ import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConsta
 public class SseStreamInterceptor extends DefaultStreamInterceptor {
 
     private static final Log log = LogFactory.getLog(SseStreamInterceptor.class);
-    private GenericRequestDataCollector dataCollector = new GenericRequestDataCollector();
 
     private String charset = StandardCharsets.UTF_8.name();
     private static final String SSE_STREAM_DELIMITER = "\n\n";
     private ExecutorService throttlePublisherService;
-    private static int DEFAULT_NO_OF_THROTTLE_PUBLISHER_EXECUTORS = 100;
-    private int noOfEecuterThreads = DEFAULT_NO_OF_THROTTLE_PUBLISHER_EXECUTORS;
+    private static final int DEFAULT_NO_OF_THROTTLE_PUBLISHER_EXECUTORS = 100;
+    private int noOfExecutorThreads = DEFAULT_NO_OF_THROTTLE_PUBLISHER_EXECUTORS;
 
     public SseStreamInterceptor() {
-        throttlePublisherService = Executors.newFixedThreadPool(noOfEecuterThreads);
+        throttlePublisherService = Executors.newFixedThreadPool(noOfExecutorThreads);
     }
 
     @Override
@@ -74,11 +72,18 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
     @Override
     public boolean targetResponse(ByteBuffer buffer, MessageContext axis2Ctx) {
         int eventCount = getEventCount(buffer);
-        log.info("No. of events: " + eventCount);
+        log.info("No. of events: " + eventCount); // todo -remove
+        if (log.isDebugEnabled()) {
+            log.debug("No. of events =" + eventCount);
+        }
         if (eventCount > 0) {
             return handleThrottlingAndAnalytics(eventCount, axis2Ctx);
         }
         return true;
+    }
+
+    public void setNoOfExecutorThreads(int executorThreads) {
+        this.noOfExecutorThreads = executorThreads;
     }
 
     private int getEventCount(ByteBuffer stream) {
@@ -89,14 +94,10 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
 
     private boolean handleThrottlingAndAnalytics(int eventCount, MessageContext axi2Ctx) {
 
-        boolean throttleResult = false;
         Object throttleObject = axi2Ctx.getProperty(SSE_THROTTLE_DTO);
         if (throttleObject != null) {
-
             ThrottleDTO throttleDTO = (ThrottleDTO) throttleObject;
-
             String applicationLevelTier = throttleDTO.getApplicationTier();
-
             String apiLevelTier = throttleDTO.getApiTier();
             String subscriptionLevelTier = throttleDTO.getTier();
             String resourceLevelTier = throttleDTO.getResourceTier();
@@ -112,20 +113,15 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
             String apiVersion = throttleDTO.getApiVersion();
             String appTenant = throttleDTO.getSubscriberTenantDomain();
             String apiTenant = throttleDTO.getSubscriberTenantDomain();
-
             String appId = throttleDTO.getApplicationId();
             String applicationLevelThrottleKey = appId + ":" + authorizedUser;
             String apiLevelThrottleKey = throttleDTO.getApiContext() + ":" + apiVersion;
             String resourceLevelThrottleKey = throttleDTO.getResourceLevelThrottleKey();
             String subscriptionLevelThrottleKey = appId + ":" + throttleDTO.getApiContext() + ":" + apiVersion;
             String messageId = UIDGenerator.generateURNString();
-            String remoteIP = throttleDTO.getRemtoeIp();
-            if (log.isDebugEnabled()) {
-                log.debug("Remote IP address : " + remoteIP);
-            }
-            if (remoteIP.indexOf(":") > 0) {
-                remoteIP = remoteIP.substring(1, remoteIP.indexOf(":"));
-            }
+            String remoteIP = throttleDTO.getRemoteIp();
+            String tenantDomain = throttleDTO.getSubscriberTenantDomain();
+
             JSONObject jsonObMap = new JSONObject();
             if (remoteIP != null && remoteIP.length() > 0) {
                 try {
@@ -135,22 +131,16 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
                     } else if (address instanceof Inet6Address) {
                         jsonObMap.put(APIThrottleConstants.IPv6, APIUtil.ipToBigInteger(remoteIP));
                     }
-                } catch (UnknownHostException e) {
-                    //ignore the error and log it
-                    log.error("Error while parsing host IP " + remoteIP, e);
+                } catch (UnknownHostException ignored) {
+                    log.error("Error while parsing host IP " + remoteIP, ignored);
                 }
             }
-            //jsonObMap.put(APIThrottleConstants.MESSAGE_SIZE, 12);
-            // APIKeyValidationInfoDTO infoDTO = new APIKeyValidationInfoDTO();
-            String tenantDomain = throttleDTO.getSubscriberTenantDomain();
-
             try {
                 PrivilegedCarbonContext.startTenantFlow();
                 PrivilegedCarbonContext.getThreadLocalCarbonContext().setTenantDomain(tenantDomain, true);
                 boolean isThrottled = isThrottled(resourceLevelThrottleKey, subscriptionLevelThrottleKey,
                                                   applicationLevelThrottleKey);
                 if (isThrottled) {
-                    log.error("Event is throttled ...");
                     return false;
                 }
             } finally {
@@ -163,7 +153,6 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
                                               subscriptionLevelTier, resourceLevelThrottleKey, resourceLevelTier,
                                               authorizedUser, messageId, apiName, apiContext, apiVersion, appTenant,
                                               apiTenant, appId, jsonObMap));
-
             return true;
         } else {
             log.error("Throttle object cannot be null.");
@@ -172,12 +161,12 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
     }
 
     /**
-     * check if the request is throttled
+     * Check if the request is throttled
      *
-     * @param resourceLevelThrottleKey
-     * @param subscriptionLevelThrottleKey
-     * @param applicationLevelThrottleKey
-     * @return true if request is throttled out
+     * @param resourceLevelThrottleKey     resource level key
+     * @param subscriptionLevelThrottleKey subscription level key
+     * @param applicationLevelThrottleKey  application level key
+     * @return is throttled or not
      */
     private static boolean isThrottled(String resourceLevelThrottleKey, String subscriptionLevelThrottleKey,
                                        String applicationLevelThrottleKey) {
