@@ -20,15 +20,16 @@ package org.wso2.carbon.apimgt.gateway.handlers.streaming.sse;
 
 import org.apache.axiom.util.UIDGenerator;
 import org.apache.axis2.context.MessageContext;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.passthru.DefaultStreamInterceptor;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.json.JSONObject;
 import org.wso2.carbon.apimgt.gateway.handlers.analytics.collectors.GenericRequestDataCollector;
+import org.wso2.carbon.apimgt.gateway.handlers.streaming.throttling.StreamingApiThrottleDataPublisher;
 import org.wso2.carbon.apimgt.gateway.handlers.throttling.APIThrottleConstants;
 import org.wso2.carbon.apimgt.gateway.internal.ServiceReferenceHolder;
-import org.wso2.carbon.apimgt.gateway.throttling.publisher.ThrottleDataPublisher;
 import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.utils.APIUtil;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
@@ -39,6 +40,10 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConstants.SSE_THROTTLE_DTO;
 
@@ -50,6 +55,16 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
     private static final Log log = LogFactory.getLog(SseStreamInterceptor.class);
     private GenericRequestDataCollector dataCollector = new GenericRequestDataCollector();
 
+    private String charset = StandardCharsets.UTF_8.name();
+    private static final String SSE_STREAM_DELIMITER = "\n\n";
+    private ExecutorService throttlePublisherService;
+    private static int DEFAULT_NO_OF_THROTTLE_PUBLISHER_EXECUTORS = 100;
+    private int noOfEecuterThreads = DEFAULT_NO_OF_THROTTLE_PUBLISHER_EXECUTORS;
+
+    public SseStreamInterceptor() {
+        throttlePublisherService = Executors.newFixedThreadPool(noOfEecuterThreads);
+    }
+
     @Override
     public boolean interceptTargetResponse(MessageContext axisCtx) {
         Object artifactType = axisCtx.getProperty(PassThroughConstants.SYNAPSE_ARTIFACT_TYPE);
@@ -59,13 +74,17 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
     @Override
     public boolean targetResponse(ByteBuffer buffer, MessageContext axis2Ctx) {
         int eventCount = getEventCount(buffer);
-        return handleThrottlingAndAnalytics(eventCount, axis2Ctx);
+        log.info("No. of events: " + eventCount);
+        if (eventCount > 0) {
+            return handleThrottlingAndAnalytics(eventCount, axis2Ctx);
+        }
+        return true;
     }
 
-    private int getEventCount(ByteBuffer buffer) {
-        int count = 1;
-        // do process
-        return count;
+    private int getEventCount(ByteBuffer stream) {
+        Charset charsetValue = Charset.forName(this.charset);
+        String text = charsetValue.decode(stream).toString();
+        return StringUtils.countMatches(text, SSE_STREAM_DELIMITER);
     }
 
     private boolean handleThrottlingAndAnalytics(int eventCount, MessageContext axi2Ctx) {
@@ -80,7 +99,7 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
 
             String apiLevelTier = throttleDTO.getApiTier();
             String subscriptionLevelTier = throttleDTO.getTier();
-            String resourceLevelTier = apiLevelTier;
+            String resourceLevelTier = throttleDTO.getResourceTier();
             String authorizedUser;
             if (MultitenantConstants.SUPER_TENANT_DOMAIN_NAME.equalsIgnoreCase(
                     throttleDTO.getSubscriberTenantDomain())) {
@@ -89,6 +108,7 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
                 authorizedUser = throttleDTO.getSubscriber();
             }
             String apiName = throttleDTO.getApiName();
+            String apiContext = throttleDTO.getApiContext();
             String apiVersion = throttleDTO.getApiVersion();
             String appTenant = throttleDTO.getSubscriberTenantDomain();
             String apiTenant = throttleDTO.getSubscriberTenantDomain();
@@ -136,35 +156,14 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
             } finally {
                 PrivilegedCarbonContext.endTenantFlow();
             }
+            StreamingApiThrottleDataPublisher dataPublisher = new StreamingApiThrottleDataPublisher();
+            throttlePublisherService.execute(() -> dataPublisher
+                    .publishNonThrottledEvent(eventCount, applicationLevelThrottleKey, applicationLevelTier,
+                                              apiLevelThrottleKey, apiLevelTier, subscriptionLevelThrottleKey,
+                                              subscriptionLevelTier, resourceLevelThrottleKey, resourceLevelTier,
+                                              authorizedUser, messageId, apiName, apiContext, apiVersion, appTenant,
+                                              apiTenant, appId, jsonObMap));
 
-//            ServiceReferenceHolder.getInstance().getThrottleDataPublisher().
-//                    publishNonThrottledEvent(applicationLevelThrottleKey,
-//                                             applicationLevelTier, apiLevelThrottleKey, apiLevelTier,
-//                                             subscriptionLevelThrottleKey, subscriptionLevelTier,
-//                                             resourceLevelThrottleKey, resourceLevelTier,
-//                                             authorizedUser, apiContext,
-//                                             apiVersion, subscriberTenantDomain, apiTenantDomain,
-//                                             applicationId,
-//                                             null, authContext);
-
-            Object[] objects =
-                    new Object[] { messageId, applicationLevelThrottleKey, applicationLevelTier, apiLevelThrottleKey,
-                            apiLevelTier, subscriptionLevelThrottleKey, subscriptionLevelTier, resourceLevelThrottleKey,
-                            resourceLevelTier, authorizedUser, throttleDTO.getApiContext(), apiVersion, appTenant,
-                            apiTenant, appId, apiName, jsonObMap.toString() };
-
-            org.wso2.carbon.databridge.commons.Event event = new org.wso2.carbon.databridge.commons.Event(
-                    "org.wso2.throttle.request.stream:1.0.0", System.currentTimeMillis(), null, null, objects);
-
-            ThrottleDataPublisher throttleDataPublisher =
-                    ServiceReferenceHolder.getInstance().getThrottleDataPublisher();
-            if (throttleDataPublisher != null) {
-                // todo need to publish per number of events
-                throttleDataPublisher.getDataPublisher().tryPublish(event);
-            } else {
-                log.error("Cannot publish events to traffic manager because ThrottleDataPublisher "
-                                  + "has not been initialised");
-            }
             return true;
         } else {
             log.error("Throttle object cannot be null.");
@@ -192,5 +191,9 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
                 applicationLevelThrottleKey);
         log.info("isApplicationLevelThrottled : " + isApplicationLevelThrottled);
         return (isApiLevelThrottled || isApplicationLevelThrottled || isSubscriptionLevelThrottled);
+    }
+
+    public void setCharset(String charset) {
+        this.charset = charset;
     }
 }

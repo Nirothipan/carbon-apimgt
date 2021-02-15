@@ -40,6 +40,7 @@ public class ThrottleDTO {
     //Form API Manager 2.0 onward API specific tiers can define and this property is here to pass it.
     private String apiTier;
     //JWT or SAML token containing details of API invoker
+    private String resourceTier;
     private String userType;
     private String endUserToken;
     private String endUserName;
@@ -70,7 +71,9 @@ public class ThrottleDTO {
     private String remtoeIp;
     private String resourceLevelThrottleKey;
 
-    public ThrottleDTO(AuthenticationContext context, String apiContext, String version, String resourceLevelThrottleKey) {
+
+    public ThrottleDTO(AuthenticationContext context, String apiContext, String version,
+                       String resourceLevelThrottleKey, String resourceTier) {
 
         //this.authenticationContext = context;
         this.applicationTier = context.getApplicationTier();
@@ -88,6 +91,7 @@ public class ThrottleDTO {
         this.apiVersion = version;
         this.apiContext = apiContext;
         this.resourceLevelThrottleKey = resourceLevelThrottleKey;
+        this.resourceTier = resourceTier;
     }
 
     public String getApplicationTier() {
@@ -191,4 +195,7 @@ public class ThrottleDTO {
         return resourceLevelThrottleKey;
     }
 
+    public String getResourceTier() {
+        return resourceTier;
+    }
 }

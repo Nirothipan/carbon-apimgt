@@ -24,14 +24,12 @@ import org.apache.synapse.MessageContext;
 import org.apache.synapse.core.axis2.Axis2MessageContext;
 import org.apache.synapse.rest.RESTConstants;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
-import org.wso2.carbon.apimgt.gateway.handlers.analytics.collectors.GenericRequestDataCollector;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APIAuthenticationHandler;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APISecurityUtils;
 import org.wso2.carbon.apimgt.gateway.handlers.security.AuthenticationContext;
 import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.dto.VerbInfoDTO;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.apache.axis2.Constants.Configuration.HTTP_METHOD;
@@ -41,8 +39,6 @@ import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConsta
  * Wraps the authentication handler for the purpose of changing the http method before calling it.
  */
 public class SseApiHandler extends APIAuthenticationHandler {
-
-    private GenericRequestDataCollector dataCollector = new GenericRequestDataCollector();
 
     @Override
     public boolean handleRequest(MessageContext synCtx) {
@@ -55,14 +51,14 @@ public class SseApiHandler extends APIAuthenticationHandler {
         synCtx.setProperty(org.wso2.carbon.apimgt.gateway.handlers.analytics.Constants.SKIP_DEFAULT_METRICS_PUBLISHING,
                            true);
         if (isAuthenticated) {
-            prepareThrottleData(synCtx);
+            setThrottleDataInMsgContext(synCtx);
             axisCtx.setProperty(PassThroughConstants.SYNAPSE_ARTIFACT_TYPE, APIConstants.API_TYPE_SSE);
         }
         publishSubscriptionEvent(synCtx);
         return isAuthenticated;
     }
 
-    private void prepareThrottleData(MessageContext synCtx) {
+    private void setThrottleDataInMsgContext(MessageContext synCtx) {
 
         org.apache.axis2.context.MessageContext axis2MC = ((Axis2MessageContext) synCtx).
                 getAxis2MessageContext();
@@ -71,17 +67,20 @@ public class SseApiHandler extends APIAuthenticationHandler {
         String apiVersion = (String) synCtx.getProperty(RESTConstants.SYNAPSE_REST_API_VERSION);
         List<VerbInfoDTO> verbInfoList = (List<VerbInfoDTO>) synCtx.getProperty(APIConstants.VERB_INFO_DTO);
         String resourceLevelThrottleKey = null;
+        String resourceLevelTier = null;
         if (verbInfoList != null) {
             // for sse, there will be only one verb info list
-            resourceLevelThrottleKey = verbInfoList.get(0).getRequestKey();
+            VerbInfoDTO verbInfoDTO = verbInfoList.get(0);
+            resourceLevelThrottleKey = verbInfoDTO.getRequestKey();
+            resourceLevelTier = verbInfoDTO.getThrottling();
         }
         ThrottleDTO throttleDTO = new ThrottleDTO(authenticationContext, apiContext, apiVersion,
-                                                  resourceLevelThrottleKey);
+                                                  resourceLevelThrottleKey, resourceLevelTier);
         axis2MC.setProperty(SSE_THROTTLE_DTO, throttleDTO);
     }
 
     private void publishSubscriptionEvent(MessageContext synCtx) {
-        //   dataCollector.collectData(synCtx);
+        //   todo
     }
 
 }
