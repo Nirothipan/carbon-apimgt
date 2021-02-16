@@ -23,6 +23,6 @@ public class SseApiConstants {
     public static final String SSE_THROTTLE_DTO = "sse_throttle_dto";
     public static final String THROTTLED_MESSAGE =
             ": request is throttled out by the server, try again at later point of time\n";
-    public static final String SSE_CONTENT_TYPE = "text/event-stream";
+    public static final String SSE_CONTENT_TYPE = "text/plain";
 
 }

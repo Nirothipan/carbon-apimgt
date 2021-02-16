@@ -33,6 +33,7 @@ import org.apache.synapse.core.axis2.Axis2Sender;
 import org.apache.synapse.rest.RESTConstants;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
+import org.apache.synapse.transport.passthru.util.RelayUtils;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APIAuthenticationHandler;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APISecurityUtils;
 import org.wso2.carbon.apimgt.gateway.handlers.security.AuthenticationContext;
@@ -41,9 +42,11 @@ import org.wso2.carbon.apimgt.gateway.utils.GatewayUtils;
 import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.dto.VerbInfoDTO;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import javax.xml.namespace.QName;
+import javax.xml.stream.XMLStreamException;
 
 import static org.apache.axis2.Constants.Configuration.HTTP_METHOD;
 import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConstants.SSE_CONTENT_TYPE;
@@ -75,7 +78,13 @@ public class SseApiHandler extends APIAuthenticationHandler {
                                                        throttleInfo.getSubscriptionLevelThrottleKey(),
                                                        throttleInfo.getApplicationLevelThrottleKey());
             if (isThrottled) {
-                handleThrottledOut(synCtx);
+                try {
+                    handleThrottledOut(synCtx);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                } catch (XMLStreamException e) {
+                    e.printStackTrace();
+                }
                 log.warn("Request is throttled out");
                 return false;
             }
@@ -112,7 +121,7 @@ public class SseApiHandler extends APIAuthenticationHandler {
         //   todo
     }
 
-    private void handleThrottledOut(MessageContext synCtx) {
+    private void handleThrottledOut(MessageContext synCtx) throws IOException, XMLStreamException {
 
         OMFactory factory = OMAbstractFactory.getOMFactory();
         OMElement payload = factory.createOMElement(TEXT_ELEMENT);
