@@ -59,7 +59,6 @@ public class StreamingApiThrottleDataPublisher {
             log.error("Cannot publish events to traffic manager because ThrottleDataPublisher "
                               + "has not been initialised");
         }
-
     }
 
 }

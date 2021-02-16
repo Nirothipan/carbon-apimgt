@@ -52,15 +52,33 @@ import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConsta
 public class SseStreamInterceptor extends DefaultStreamInterceptor {
 
     private static final Log log = LogFactory.getLog(SseStreamInterceptor.class);
-
-    private String charset = StandardCharsets.UTF_8.name();
     private static final String SSE_STREAM_DELIMITER = "\n\n";
-    private ExecutorService throttlePublisherService;
     private static final int DEFAULT_NO_OF_THROTTLE_PUBLISHER_EXECUTORS = 100;
+    private String charset = StandardCharsets.UTF_8.name();
+    private ExecutorService throttlePublisherService;
     private int noOfExecutorThreads = DEFAULT_NO_OF_THROTTLE_PUBLISHER_EXECUTORS;
 
     public SseStreamInterceptor() {
         throttlePublisherService = Executors.newFixedThreadPool(noOfExecutorThreads);
+    }
+
+    /**
+     * Check if the request is throttled
+     *
+     * @param resourceLevelThrottleKey     resource level key
+     * @param subscriptionLevelThrottleKey subscription level key
+     * @param applicationLevelThrottleKey  application level key
+     * @return is throttled or not
+     */
+    private static boolean isThrottled(String resourceLevelThrottleKey, String subscriptionLevelThrottleKey,
+                                       String applicationLevelThrottleKey) {
+        boolean isApiLevelThrottled = ServiceReferenceHolder.getInstance().getThrottleDataHolder().isAPIThrottled(
+                resourceLevelThrottleKey);
+        boolean isSubscriptionLevelThrottled = ServiceReferenceHolder.getInstance().getThrottleDataHolder().isThrottled(
+                subscriptionLevelThrottleKey);
+        boolean isApplicationLevelThrottled = ServiceReferenceHolder.getInstance().getThrottleDataHolder().isThrottled(
+                applicationLevelThrottleKey);
+        return (isApiLevelThrottled || isApplicationLevelThrottled || isSubscriptionLevelThrottled);
     }
 
     @Override
@@ -101,6 +119,7 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
             String apiLevelTier = throttleDTO.getApiTier();
             String subscriptionLevelTier = throttleDTO.getTier();
             String resourceLevelTier = throttleDTO.getResourceTier();
+            String apiName = throttleDTO.getApiName();
             String authorizedUser;
             if (MultitenantConstants.SUPER_TENANT_DOMAIN_NAME.equalsIgnoreCase(
                     throttleDTO.getSubscriberTenantDomain())) {
@@ -108,7 +127,6 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
             } else {
                 authorizedUser = throttleDTO.getSubscriber();
             }
-            String apiName = throttleDTO.getApiName();
             String apiContext = throttleDTO.getApiContext();
             String apiVersion = throttleDTO.getApiVersion();
             String appTenant = throttleDTO.getSubscriberTenantDomain();
@@ -131,8 +149,8 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
                     } else if (address instanceof Inet6Address) {
                         jsonObMap.put(APIThrottleConstants.IPv6, APIUtil.ipToBigInteger(remoteIP));
                     }
-                } catch (UnknownHostException ignored) {
-                    log.error("Error while parsing host IP " + remoteIP, ignored);
+                } catch (UnknownHostException ex) {
+                    log.error("Error while parsing host IP " + remoteIP, ex);
                 }
             }
             try {
@@ -158,28 +176,6 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
             log.error("Throttle object cannot be null.");
         }
         return true;
-    }
-
-    /**
-     * Check if the request is throttled
-     *
-     * @param resourceLevelThrottleKey     resource level key
-     * @param subscriptionLevelThrottleKey subscription level key
-     * @param applicationLevelThrottleKey  application level key
-     * @return is throttled or not
-     */
-    private static boolean isThrottled(String resourceLevelThrottleKey, String subscriptionLevelThrottleKey,
-                                       String applicationLevelThrottleKey) {
-        boolean isApiLevelThrottled = ServiceReferenceHolder.getInstance().getThrottleDataHolder().isAPIThrottled(
-                resourceLevelThrottleKey);
-        log.info("isApiLevelThrottled : " + isApiLevelThrottled);
-        boolean isSubscriptionLevelThrottled = ServiceReferenceHolder.getInstance().getThrottleDataHolder().isThrottled(
-                subscriptionLevelThrottleKey);
-        log.info("isSubscriptionLevelThrottled : " + isSubscriptionLevelThrottled);
-        boolean isApplicationLevelThrottled = ServiceReferenceHolder.getInstance().getThrottleDataHolder().isThrottled(
-                applicationLevelThrottleKey);
-        log.info("isApplicationLevelThrottled : " + isApplicationLevelThrottled);
-        return (isApiLevelThrottled || isApplicationLevelThrottled || isSubscriptionLevelThrottled);
     }
 
     public void setCharset(String charset) {
