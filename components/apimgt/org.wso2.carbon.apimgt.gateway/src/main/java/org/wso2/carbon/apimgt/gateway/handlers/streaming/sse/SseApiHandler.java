@@ -56,11 +56,11 @@ public class SseApiHandler extends APIAuthenticationHandler {
         synCtx.setProperty(org.wso2.carbon.apimgt.gateway.handlers.analytics.Constants.SKIP_DEFAULT_METRICS_PUBLISHING,
                            true);
         if (isAuthenticated) {
-            ThrottleDTO throttleDTO = getThrottleDataInMsgContext(synCtx);
-            boolean isThrottled = SseUtils.isThrottled(throttleDTO.getSubscriberTenantDomain(),
-                                                       throttleDTO.getResourceLevelThrottleKey(),
-                                                       throttleDTO.getSubscriptionLevelThrottleKey(),
-                                                       throttleDTO.getApplicationLevelThrottleKey());
+            ThrottleInfo throttleInfo = getThrottlingInfo(synCtx);
+            boolean isThrottled = SseUtils.isThrottled(throttleInfo.getSubscriberTenantDomain(),
+                                                       throttleInfo.getResourceLevelThrottleKey(),
+                                                       throttleInfo.getSubscriptionLevelThrottleKey(),
+                                                       throttleInfo.getApplicationLevelThrottleKey());
             if (isThrottled) {
                 log.warn("Request is throttled out");
                 return false;
@@ -71,7 +71,7 @@ public class SseApiHandler extends APIAuthenticationHandler {
         return isAuthenticated;
     }
 
-    private ThrottleDTO getThrottleDataInMsgContext(MessageContext synCtx) {
+    private ThrottleInfo getThrottlingInfo(MessageContext synCtx) {
 
         org.apache.axis2.context.MessageContext axis2MC = ((Axis2MessageContext) synCtx).
                 getAxis2MessageContext();
@@ -88,10 +88,10 @@ public class SseApiHandler extends APIAuthenticationHandler {
             resourceLevelTier = verbInfoDTO.getThrottling();
         }
         String remoteIP = GatewayUtils.getIp(axis2MC);
-        ThrottleDTO throttleDTO = new ThrottleDTO(authenticationContext, apiContext, apiVersion,
-                                                  resourceLevelThrottleKey, resourceLevelTier, remoteIP);
-        axis2MC.setProperty(SSE_THROTTLE_DTO, throttleDTO);
-        return throttleDTO;
+        ThrottleInfo throttleInfo = new ThrottleInfo(authenticationContext, apiContext, apiVersion,
+                                                     resourceLevelThrottleKey, resourceLevelTier, remoteIP);
+        axis2MC.setProperty(SSE_THROTTLE_DTO, throttleInfo);
+        return throttleInfo;
     }
 
     private void publishSubscriptionEvent(MessageContext synCtx) {

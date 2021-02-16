@@ -92,52 +92,32 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
 
         Object throttleObject = axi2Ctx.getProperty(SSE_THROTTLE_DTO);
         if (throttleObject != null) {
-
-            ThrottleDTO throttleDTO = (ThrottleDTO) throttleObject;
-            String applicationLevelTier = throttleDTO.getApplicationTier();
-            String apiLevelTier = throttleDTO.getApiTier();
-            String subscriptionLevelTier = throttleDTO.getTier();
-            String resourceLevelTier = throttleDTO.getResourceTier();
-            String apiName = throttleDTO.getApiName();
-            String authorizedUser = throttleDTO.getAuthorizedUser();
-            String apiContext = throttleDTO.getApiContext();
-            String apiVersion = throttleDTO.getApiVersion();
-            String appTenant = throttleDTO.getSubscriberTenantDomain();
-            String apiTenant = throttleDTO.getSubscriberTenantDomain();
-            String appId = throttleDTO.getApplicationId();
-            String apiLevelThrottleKey = throttleDTO.getApiLevelThrottleKey();
-            String resourceLevelThrottleKey = throttleDTO.getResourceLevelThrottleKey();
-            String subscriptionLevelThrottleKey = throttleDTO.getSubscriptionLevelThrottleKey();
-            String applicationLevelThrottleKey = throttleDTO.getApplicationLevelThrottleKey();
             String messageId = UIDGenerator.generateURNString();
-            String remoteIP = throttleDTO.getRemoteIp();
-            String tenantDomain = throttleDTO.getSubscriberTenantDomain();
-
-            JSONObject jsonObMap = new JSONObject();
+            ThrottleInfo throttleInfo = (ThrottleInfo) throttleObject;
+            String remoteIP = throttleInfo.getRemoteIp();
+            JSONObject additionalProperties = new JSONObject();
             if (remoteIP != null && remoteIP.length() > 0) {
                 try {
                     InetAddress address = APIUtil.getAddress(remoteIP);
                     if (address instanceof Inet4Address) {
-                        jsonObMap.put(APIThrottleConstants.IP, APIUtil.ipToLong(remoteIP));
+                        additionalProperties.put(APIThrottleConstants.IP, APIUtil.ipToLong(remoteIP));
                     } else if (address instanceof Inet6Address) {
-                        jsonObMap.put(APIThrottleConstants.IPv6, APIUtil.ipToBigInteger(remoteIP));
+                        additionalProperties.put(APIThrottleConstants.IPv6, APIUtil.ipToBigInteger(remoteIP));
                     }
                 } catch (UnknownHostException ex) {
                     log.error("Error while parsing host IP " + remoteIP, ex);
                 }
             }
-            boolean isThrottled = isThrottled(tenantDomain, resourceLevelThrottleKey, subscriptionLevelThrottleKey,
-                                              applicationLevelThrottleKey);
+            boolean isThrottled = isThrottled(throttleInfo.getSubscriberTenantDomain(),
+                                              throttleInfo.getResourceLevelThrottleKey(),
+                                              throttleInfo.getSubscriptionLevelThrottleKey(),
+                                              throttleInfo.getApplicationLevelThrottleKey());
             if (isThrottled) {
                 log.warn("Request is throttled out");
                 return false;
             }
-            throttlePublisherService.execute(() -> SseUtils
-                    .publishNonThrottledEvent(eventCount, applicationLevelThrottleKey, applicationLevelTier,
-                                              apiLevelThrottleKey, apiLevelTier, subscriptionLevelThrottleKey,
-                                              subscriptionLevelTier, resourceLevelThrottleKey, resourceLevelTier,
-                                              authorizedUser, messageId, apiName, apiContext, apiVersion, appTenant,
-                                              apiTenant, appId, jsonObMap));
+            throttlePublisherService.execute(
+                    () -> SseUtils.publishNonThrottledEvent(eventCount, messageId, throttleInfo, additionalProperties));
             return true;
         } else {
             log.error("Throttle object cannot be null.");

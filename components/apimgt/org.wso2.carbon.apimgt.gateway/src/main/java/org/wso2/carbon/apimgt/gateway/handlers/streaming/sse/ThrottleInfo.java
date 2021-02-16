@@ -22,9 +22,9 @@ import org.wso2.carbon.apimgt.gateway.handlers.security.AuthenticationContext;
 import org.wso2.carbon.utils.multitenancy.MultitenantConstants;
 
 /**
- * Holder for throttling data.
+ * Holds information related to throttling for the purpose of re use in case of sse apis response event flow.
  */
-public class ThrottleDTO {
+public class ThrottleInfo {
 
     private String applicationTier;
     private String subscriber;
@@ -46,8 +46,8 @@ public class ThrottleDTO {
     private String applicationLevelThrottleKey;
     private String apiLevelThrottleKey;
 
-    public ThrottleDTO(AuthenticationContext context, String apiContext, String version,
-                       String resourceLevelThrottleKey, String resourceTier, String remoteIp) {
+    public ThrottleInfo(AuthenticationContext context, String apiContext, String version,
+                        String resourceLevelThrottleKey, String resourceTier, String remoteIp) {
 
         this.applicationTier = context.getApplicationTier();
         this.tier = context.getTier();
@@ -166,10 +166,6 @@ public class ThrottleDTO {
 
     public String getSubscriptionLevelThrottleKey() {
         return subscriptionLevelThrottleKey;
-    }
-
-    public void setSubscriptionLevelThrottleKey(String subscriptionLevelThrottleKey) {
-        this.subscriptionLevelThrottleKey = subscriptionLevelThrottleKey;
     }
 
     public String getApplicationLevelThrottleKey() {

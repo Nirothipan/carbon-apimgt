@@ -26,6 +26,9 @@ import org.wso2.carbon.apimgt.gateway.throttling.publisher.ThrottleDataPublisher
 import org.wso2.carbon.context.PrivilegedCarbonContext;
 import org.wso2.carbon.databridge.agent.DataPublisher;
 
+/**
+ * Utils methods related to SSE Api.
+ */
 public class SseUtils {
 
     private static final Log log = LogFactory.getLog(SseUtils.class);
@@ -68,19 +71,16 @@ public class SseUtils {
         }
     }
 
-    public static void publishNonThrottledEvent(int eventCount, String applicationLevelThrottleKey,
-                                                String applicationLevelTier, String apiLevelThrottleKey,
-                                                String apiLevelTier, String subscriptionLevelThrottleKey,
-                                                String subscriptionLevelTier, String resourceLevelThrottleKey,
-                                                String resourceLevelTier, String authorizedUser, String messageId,
-                                                String apiName, String apiContext, String apiVersion, String appTenant,
-                                                String apiTenant, String appId, JSONObject properties) {
+    public static void publishNonThrottledEvent(int eventCount, String messageId, ThrottleInfo throttleInfo,
+                                                JSONObject properties) {
 
-        Object[] objects =
-                new Object[] { messageId, applicationLevelThrottleKey, applicationLevelTier, apiLevelThrottleKey,
-                        apiLevelTier, subscriptionLevelThrottleKey, subscriptionLevelTier, resourceLevelThrottleKey,
-                        resourceLevelTier, authorizedUser, apiContext, apiVersion, appTenant, apiTenant, appId, apiName,
-                        properties.toString() };
+        Object[] objects = new Object[] { messageId, throttleInfo.getApplicationLevelThrottleKey(),
+                throttleInfo.getApplicationTier(), throttleInfo.getApiLevelThrottleKey(), throttleInfo.getApiTier(),
+                throttleInfo.getSubscriptionLevelThrottleKey(), throttleInfo.getTier(),
+                throttleInfo.getResourceLevelThrottleKey(), throttleInfo.getResourceTier(),
+                throttleInfo.getAuthorizedUser(), throttleInfo.getApiContext(), throttleInfo.getApiVersion(),
+                throttleInfo.getSubscriberTenantDomain(), throttleInfo.getSubscriberTenantDomain(),
+                throttleInfo.getApplicationId(), throttleInfo.getApiName(), properties.toString() };
 
         org.wso2.carbon.databridge.commons.Event event = new org.wso2.carbon.databridge.commons.Event(
                 THROTTLE_STREAM_ID, System.currentTimeMillis(), null, null, objects);
