@@ -20,12 +20,16 @@ package org.wso2.carbon.apimgt.gateway.handlers.streaming.sse;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.json.JSONObject;
 import org.wso2.carbon.apimgt.gateway.internal.ServiceReferenceHolder;
+import org.wso2.carbon.apimgt.gateway.throttling.publisher.ThrottleDataPublisher;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
+import org.wso2.carbon.databridge.agent.DataPublisher;
 
 public class SseUtils {
 
     private static final Log log = LogFactory.getLog(SseUtils.class);
+    private static final String THROTTLE_STREAM_ID = "org.wso2.throttle.request.stream:1.0.0";
 
     /**
      * Check if the request is throttled
@@ -61,6 +65,37 @@ public class SseUtils {
             return (isApiLevelThrottled || isApplicationLevelThrottled || isSubscriptionLevelThrottled);
         } finally {
             PrivilegedCarbonContext.endTenantFlow();
+        }
+    }
+
+    public static void publishNonThrottledEvent(int eventCount, String applicationLevelThrottleKey,
+                                                String applicationLevelTier, String apiLevelThrottleKey,
+                                                String apiLevelTier, String subscriptionLevelThrottleKey,
+                                                String subscriptionLevelTier, String resourceLevelThrottleKey,
+                                                String resourceLevelTier, String authorizedUser, String messageId,
+                                                String apiName, String apiContext, String apiVersion, String appTenant,
+                                                String apiTenant, String appId, JSONObject properties) {
+
+        Object[] objects =
+                new Object[] { messageId, applicationLevelThrottleKey, applicationLevelTier, apiLevelThrottleKey,
+                        apiLevelTier, subscriptionLevelThrottleKey, subscriptionLevelTier, resourceLevelThrottleKey,
+                        resourceLevelTier, authorizedUser, apiContext, apiVersion, appTenant, apiTenant, appId, apiName,
+                        properties.toString() };
+
+        org.wso2.carbon.databridge.commons.Event event = new org.wso2.carbon.databridge.commons.Event(
+                THROTTLE_STREAM_ID, System.currentTimeMillis(), null, null, objects);
+
+        ThrottleDataPublisher throttleDataPublisher = ServiceReferenceHolder.getInstance().getThrottleDataPublisher();
+        if (throttleDataPublisher != null) {
+            int count = 1;
+            DataPublisher publisher = ThrottleDataPublisher.getDataPublisher();
+            while (count <= eventCount) {
+                publisher.tryPublish(event);
+                count++;
+            }
+        } else {
+            log.error("Cannot publish events to traffic manager because ThrottleDataPublisher "
+                              + "has not been initialised");
         }
     }
 }

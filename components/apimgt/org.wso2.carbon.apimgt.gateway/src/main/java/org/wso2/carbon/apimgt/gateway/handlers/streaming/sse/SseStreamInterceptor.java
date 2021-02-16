@@ -26,7 +26,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.passthru.DefaultStreamInterceptor;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.json.JSONObject;
-import org.wso2.carbon.apimgt.gateway.handlers.streaming.throttling.StreamingApiThrottleDataPublisher;
 import org.wso2.carbon.apimgt.gateway.handlers.throttling.APIThrottleConstants;
 import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.utils.APIUtil;
@@ -42,6 +41,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConstants.SSE_THROTTLE_DTO;
+import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseUtils.isThrottled;
 
 /**
  * This is used for handling throttling, and analytics event publishing of sse apis (subset of streaming apis).
@@ -126,14 +126,13 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
                     log.error("Error while parsing host IP " + remoteIP, ex);
                 }
             }
-            boolean isThrottled = SseUtils.isThrottled(tenantDomain, resourceLevelThrottleKey,
-                                                       subscriptionLevelThrottleKey, applicationLevelThrottleKey);
+            boolean isThrottled = isThrottled(tenantDomain, resourceLevelThrottleKey, subscriptionLevelThrottleKey,
+                                              applicationLevelThrottleKey);
             if (isThrottled) {
                 log.warn("Request is throttled out");
                 return false;
             }
-            StreamingApiThrottleDataPublisher dataPublisher = new StreamingApiThrottleDataPublisher();
-            throttlePublisherService.execute(() -> dataPublisher
+            throttlePublisherService.execute(() -> SseUtils
                     .publishNonThrottledEvent(eventCount, applicationLevelThrottleKey, applicationLevelTier,
                                               apiLevelThrottleKey, apiLevelTier, subscriptionLevelThrottleKey,
                                               subscriptionLevelTier, resourceLevelThrottleKey, resourceLevelTier,
