@@ -19,24 +19,36 @@
 
 package org.wso2.carbon.apimgt.gateway.handlers.streaming.sse;
 
+import org.apache.axiom.om.OMAbstractFactory;
+import org.apache.axiom.om.OMElement;
+import org.apache.axiom.om.OMFactory;
 import org.apache.axis2.Constants;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.http.HttpHeaders;
 import org.apache.synapse.MessageContext;
+import org.apache.synapse.SynapseConstants;
 import org.apache.synapse.core.axis2.Axis2MessageContext;
+import org.apache.synapse.core.axis2.Axis2Sender;
 import org.apache.synapse.rest.RESTConstants;
+import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APIAuthenticationHandler;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APISecurityUtils;
 import org.wso2.carbon.apimgt.gateway.handlers.security.AuthenticationContext;
+import org.wso2.carbon.apimgt.gateway.handlers.throttling.APIThrottleConstants;
 import org.wso2.carbon.apimgt.gateway.utils.GatewayUtils;
 import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.dto.VerbInfoDTO;
 
 import java.util.List;
+import java.util.Map;
+import javax.xml.namespace.QName;
 
 import static org.apache.axis2.Constants.Configuration.HTTP_METHOD;
+import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConstants.SSE_CONTENT_TYPE;
 import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConstants.SSE_THROTTLE_DTO;
+import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConstants.THROTTLED_MESSAGE;
 
 /**
  * Wraps the authentication handler for the purpose of changing the http method before calling it.
@@ -44,6 +56,7 @@ import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConsta
 public class SseApiHandler extends APIAuthenticationHandler {
 
     private static final Log log = LogFactory.getLog(SseApiHandler.class);
+    private static final QName TEXT_ELEMENT = new QName("http://ws.apache.org/commons/ns/payload", "text");
 
     @Override
     public boolean handleRequest(MessageContext synCtx) {
@@ -62,6 +75,7 @@ public class SseApiHandler extends APIAuthenticationHandler {
                                                        throttleInfo.getSubscriptionLevelThrottleKey(),
                                                        throttleInfo.getApplicationLevelThrottleKey());
             if (isThrottled) {
+                handleThrottledOut(synCtx);
                 log.warn("Request is throttled out");
                 return false;
             }
@@ -98,5 +112,26 @@ public class SseApiHandler extends APIAuthenticationHandler {
         //   todo
     }
 
-}
+    private void handleThrottledOut(MessageContext synCtx) {
 
+        OMFactory factory = OMAbstractFactory.getOMFactory();
+        OMElement payload = factory.createOMElement(TEXT_ELEMENT);
+        payload.setText(THROTTLED_MESSAGE);
+        synCtx.getEnvelope().getBody().addChild(payload);
+        org.apache.axis2.context.MessageContext axis2MC = ((Axis2MessageContext) synCtx).getAxis2MessageContext();
+        axis2MC.setProperty(Constants.Configuration.MESSAGE_TYPE, SSE_CONTENT_TYPE);
+        axis2MC.setProperty(Constants.Configuration.CONTENT_TYPE, SSE_CONTENT_TYPE);
+        axis2MC.setProperty(NhttpConstants.HTTP_SC, APIThrottleConstants.SC_TOO_MANY_REQUESTS);
+        synCtx.setResponse(true);
+        synCtx.setProperty(SynapseConstants.RESPONSE, "true");
+        synCtx.setTo(null);
+        axis2MC.removeProperty(NhttpConstants.NO_ENTITY_BODY);
+        Map headers = (Map) axis2MC.getProperty(org.apache.axis2.context.MessageContext.TRANSPORT_HEADERS);
+        if (headers != null) {
+            headers.remove(HttpHeaders.AUTHORIZATION);
+            headers.remove(HttpHeaders.HOST);
+        }
+        Axis2Sender.sendBack(synCtx);
+    }
+
+}
