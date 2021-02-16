@@ -28,11 +28,8 @@ import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.json.JSONObject;
 import org.wso2.carbon.apimgt.gateway.handlers.streaming.throttling.StreamingApiThrottleDataPublisher;
 import org.wso2.carbon.apimgt.gateway.handlers.throttling.APIThrottleConstants;
-import org.wso2.carbon.apimgt.gateway.internal.ServiceReferenceHolder;
 import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.utils.APIUtil;
-import org.wso2.carbon.context.PrivilegedCarbonContext;
-import org.wso2.carbon.utils.multitenancy.MultitenantConstants;
 
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -60,25 +57,6 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
 
     public SseStreamInterceptor() {
         throttlePublisherService = Executors.newFixedThreadPool(noOfExecutorThreads);
-    }
-
-    /**
-     * Check if the request is throttled
-     *
-     * @param resourceLevelThrottleKey     resource level key
-     * @param subscriptionLevelThrottleKey subscription level key
-     * @param applicationLevelThrottleKey  application level key
-     * @return is throttled or not
-     */
-    private static boolean isThrottled(String resourceLevelThrottleKey, String subscriptionLevelThrottleKey,
-                                       String applicationLevelThrottleKey) {
-        boolean isApiLevelThrottled = ServiceReferenceHolder.getInstance().getThrottleDataHolder().isAPIThrottled(
-                resourceLevelThrottleKey);
-        boolean isSubscriptionLevelThrottled = ServiceReferenceHolder.getInstance().getThrottleDataHolder().isThrottled(
-                subscriptionLevelThrottleKey);
-        boolean isApplicationLevelThrottled = ServiceReferenceHolder.getInstance().getThrottleDataHolder().isThrottled(
-                applicationLevelThrottleKey);
-        return (isApiLevelThrottled || isApplicationLevelThrottled || isSubscriptionLevelThrottled);
     }
 
     @Override
@@ -114,28 +92,23 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
 
         Object throttleObject = axi2Ctx.getProperty(SSE_THROTTLE_DTO);
         if (throttleObject != null) {
+
             ThrottleDTO throttleDTO = (ThrottleDTO) throttleObject;
             String applicationLevelTier = throttleDTO.getApplicationTier();
             String apiLevelTier = throttleDTO.getApiTier();
             String subscriptionLevelTier = throttleDTO.getTier();
             String resourceLevelTier = throttleDTO.getResourceTier();
             String apiName = throttleDTO.getApiName();
-            String authorizedUser;
-            if (MultitenantConstants.SUPER_TENANT_DOMAIN_NAME.equalsIgnoreCase(
-                    throttleDTO.getSubscriberTenantDomain())) {
-                authorizedUser = throttleDTO.getSubscriber() + "@" + throttleDTO.getSubscriberTenantDomain();
-            } else {
-                authorizedUser = throttleDTO.getSubscriber();
-            }
+            String authorizedUser = throttleDTO.getAuthorizedUser();
             String apiContext = throttleDTO.getApiContext();
             String apiVersion = throttleDTO.getApiVersion();
             String appTenant = throttleDTO.getSubscriberTenantDomain();
             String apiTenant = throttleDTO.getSubscriberTenantDomain();
             String appId = throttleDTO.getApplicationId();
-            String applicationLevelThrottleKey = appId + ":" + authorizedUser;
-            String apiLevelThrottleKey = throttleDTO.getApiContext() + ":" + apiVersion;
+            String apiLevelThrottleKey = throttleDTO.getApiLevelThrottleKey();
             String resourceLevelThrottleKey = throttleDTO.getResourceLevelThrottleKey();
-            String subscriptionLevelThrottleKey = appId + ":" + throttleDTO.getApiContext() + ":" + apiVersion;
+            String subscriptionLevelThrottleKey = throttleDTO.getSubscriptionLevelThrottleKey();
+            String applicationLevelThrottleKey = throttleDTO.getApplicationLevelThrottleKey();
             String messageId = UIDGenerator.generateURNString();
             String remoteIP = throttleDTO.getRemoteIp();
             String tenantDomain = throttleDTO.getSubscriberTenantDomain();
@@ -153,16 +126,11 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
                     log.error("Error while parsing host IP " + remoteIP, ex);
                 }
             }
-            try {
-                PrivilegedCarbonContext.startTenantFlow();
-                PrivilegedCarbonContext.getThreadLocalCarbonContext().setTenantDomain(tenantDomain, true);
-                boolean isThrottled = isThrottled(resourceLevelThrottleKey, subscriptionLevelThrottleKey,
-                                                  applicationLevelThrottleKey);
-                if (isThrottled) {
-                    return false;
-                }
-            } finally {
-                PrivilegedCarbonContext.endTenantFlow();
+            boolean isThrottled = SseUtils.isThrottled(tenantDomain, resourceLevelThrottleKey,
+                                                       subscriptionLevelThrottleKey, applicationLevelThrottleKey);
+            if (isThrottled) {
+                log.warn("Request is throttled out");
+                return false;
             }
             StreamingApiThrottleDataPublisher dataPublisher = new StreamingApiThrottleDataPublisher();
             throttlePublisherService.execute(() -> dataPublisher

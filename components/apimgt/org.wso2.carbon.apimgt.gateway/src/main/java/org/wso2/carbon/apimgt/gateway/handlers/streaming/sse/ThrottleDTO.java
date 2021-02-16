@@ -19,6 +19,7 @@
 package org.wso2.carbon.apimgt.gateway.handlers.streaming.sse;
 
 import org.wso2.carbon.apimgt.gateway.handlers.security.AuthenticationContext;
+import org.wso2.carbon.utils.multitenancy.MultitenantConstants;
 
 /**
  * Holder for throttling data.
@@ -40,6 +41,10 @@ public class ThrottleDTO {
     private String apiContext;
     private String remoteIp;
     private String resourceLevelThrottleKey;
+    private String authorizedUser;
+    private String subscriptionLevelThrottleKey;
+    private String applicationLevelThrottleKey;
+    private String apiLevelThrottleKey;
 
     public ThrottleDTO(AuthenticationContext context, String apiContext, String version,
                        String resourceLevelThrottleKey, String resourceTier, String remoteIp) {
@@ -58,6 +63,13 @@ public class ThrottleDTO {
         this.resourceLevelThrottleKey = resourceLevelThrottleKey;
         this.resourceTier = resourceTier;
         this.remoteIp = remoteIp;
+        this.authorizedUser = subscriber;
+        if (MultitenantConstants.SUPER_TENANT_DOMAIN_NAME.equalsIgnoreCase(subscriberTenantDomain)) {
+            authorizedUser += "@" + subscriberTenantDomain;
+        }
+        this.subscriptionLevelThrottleKey = applicationId + ":" + apiContext + ":" + apiVersion;
+        this.applicationLevelThrottleKey = applicationId + ":" + authorizedUser;
+        this.apiLevelThrottleKey = apiContext + ":" + apiVersion;
     }
 
     public String getApplicationTier() {
@@ -146,5 +158,25 @@ public class ThrottleDTO {
 
     public String getResourceTier() {
         return resourceTier;
+    }
+
+    public String getAuthorizedUser() {
+        return authorizedUser;
+    }
+
+    public String getSubscriptionLevelThrottleKey() {
+        return subscriptionLevelThrottleKey;
+    }
+
+    public void setSubscriptionLevelThrottleKey(String subscriptionLevelThrottleKey) {
+        this.subscriptionLevelThrottleKey = subscriptionLevelThrottleKey;
+    }
+
+    public String getApplicationLevelThrottleKey() {
+        return applicationLevelThrottleKey;
+    }
+
+    public String getApiLevelThrottleKey() {
+        return apiLevelThrottleKey;
     }
 }

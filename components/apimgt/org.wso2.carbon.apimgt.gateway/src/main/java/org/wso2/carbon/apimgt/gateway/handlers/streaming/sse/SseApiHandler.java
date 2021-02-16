@@ -20,6 +20,8 @@
 package org.wso2.carbon.apimgt.gateway.handlers.streaming.sse;
 
 import org.apache.axis2.Constants;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.MessageContext;
 import org.apache.synapse.core.axis2.Axis2MessageContext;
 import org.apache.synapse.rest.RESTConstants;
@@ -41,6 +43,8 @@ import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConsta
  */
 public class SseApiHandler extends APIAuthenticationHandler {
 
+    private static final Log log = LogFactory.getLog(SseApiHandler.class);
+
     @Override
     public boolean handleRequest(MessageContext synCtx) {
 
@@ -52,14 +56,22 @@ public class SseApiHandler extends APIAuthenticationHandler {
         synCtx.setProperty(org.wso2.carbon.apimgt.gateway.handlers.analytics.Constants.SKIP_DEFAULT_METRICS_PUBLISHING,
                            true);
         if (isAuthenticated) {
-            setThrottleDataInMsgContext(synCtx);
+            ThrottleDTO throttleDTO = getThrottleDataInMsgContext(synCtx);
+            boolean isThrottled = SseUtils.isThrottled(throttleDTO.getSubscriberTenantDomain(),
+                                                       throttleDTO.getResourceLevelThrottleKey(),
+                                                       throttleDTO.getSubscriptionLevelThrottleKey(),
+                                                       throttleDTO.getApplicationLevelThrottleKey());
+            if (isThrottled) {
+                log.warn("Request is throttled out");
+                return false;
+            }
             axisCtx.setProperty(PassThroughConstants.SYNAPSE_ARTIFACT_TYPE, APIConstants.API_TYPE_SSE);
         }
         publishSubscriptionEvent(synCtx);
         return isAuthenticated;
     }
 
-    private void setThrottleDataInMsgContext(MessageContext synCtx) {
+    private ThrottleDTO getThrottleDataInMsgContext(MessageContext synCtx) {
 
         org.apache.axis2.context.MessageContext axis2MC = ((Axis2MessageContext) synCtx).
                 getAxis2MessageContext();
@@ -79,6 +91,7 @@ public class SseApiHandler extends APIAuthenticationHandler {
         ThrottleDTO throttleDTO = new ThrottleDTO(authenticationContext, apiContext, apiVersion,
                                                   resourceLevelThrottleKey, resourceLevelTier, remoteIP);
         axis2MC.setProperty(SSE_THROTTLE_DTO, throttleDTO);
+        return throttleDTO;
     }
 
     private void publishSubscriptionEvent(MessageContext synCtx) {
