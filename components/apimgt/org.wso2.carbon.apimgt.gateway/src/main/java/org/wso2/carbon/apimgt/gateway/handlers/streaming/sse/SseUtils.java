@@ -57,9 +57,6 @@ public class SseUtils {
             boolean isApplicationLevelThrottled =
                     ServiceReferenceHolder.getInstance().getThrottleDataHolder().isThrottled(
                             applicationLevelThrottleKey);
-            log.info("Throttle result \n" + "isApiLevelThrottled : " + isApiLevelThrottled // todo remove
-                             + "\nisSubscriptionLevelThrottled : " + isSubscriptionLevelThrottled
-                             + "\nisApplicationLevelThrottled : " + isApplicationLevelThrottled);
             if (log.isDebugEnabled()) {
                 log.debug("Throttle result \n" + "isApiLevelThrottled : " + isApiLevelThrottled
                                   + "\nisSubscriptionLevelThrottled : " + isSubscriptionLevelThrottled

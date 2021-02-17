@@ -33,7 +33,6 @@ import org.apache.synapse.core.axis2.Axis2Sender;
 import org.apache.synapse.rest.RESTConstants;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
-import org.apache.synapse.transport.passthru.util.RelayUtils;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APIAuthenticationHandler;
 import org.wso2.carbon.apimgt.gateway.handlers.security.APISecurityUtils;
 import org.wso2.carbon.apimgt.gateway.handlers.security.AuthenticationContext;
@@ -42,11 +41,9 @@ import org.wso2.carbon.apimgt.gateway.utils.GatewayUtils;
 import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.dto.VerbInfoDTO;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import javax.xml.namespace.QName;
-import javax.xml.stream.XMLStreamException;
 
 import static org.apache.axis2.Constants.Configuration.HTTP_METHOD;
 import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConstants.SSE_CONTENT_TYPE;
@@ -56,6 +53,7 @@ import static org.wso2.carbon.apimgt.gateway.handlers.streaming.sse.SseApiConsta
 /**
  * Wraps the authentication handler for the purpose of changing the http method before calling it.
  */
+@SuppressWarnings("unused")
 public class SseApiHandler extends APIAuthenticationHandler {
 
     private static final Log log = LogFactory.getLog(SseApiHandler.class);
@@ -78,14 +76,7 @@ public class SseApiHandler extends APIAuthenticationHandler {
                                                        throttleInfo.getSubscriptionLevelThrottleKey(),
                                                        throttleInfo.getApplicationLevelThrottleKey());
             if (isThrottled) {
-                try {
-                    handleThrottledOut(synCtx);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                } catch (XMLStreamException e) {
-                    e.printStackTrace();
-                }
-                log.warn("Request is throttled out");
+                handleThrottledOut(synCtx);
                 return false;
             }
             axisCtx.setProperty(PassThroughConstants.SYNAPSE_ARTIFACT_TYPE, APIConstants.API_TYPE_SSE);
@@ -121,8 +112,9 @@ public class SseApiHandler extends APIAuthenticationHandler {
         //   todo
     }
 
-    private void handleThrottledOut(MessageContext synCtx) throws IOException, XMLStreamException {
+    private void handleThrottledOut(MessageContext synCtx) {
 
+        log.warn("Request is throttled out");
         OMFactory factory = OMAbstractFactory.getOMFactory();
         OMElement payload = factory.createOMElement(TEXT_ELEMENT);
         payload.setText(THROTTLED_MESSAGE);

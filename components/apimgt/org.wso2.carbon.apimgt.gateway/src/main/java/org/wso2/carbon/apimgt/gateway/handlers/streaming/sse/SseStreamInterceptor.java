@@ -26,14 +26,9 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.passthru.DefaultStreamInterceptor;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.json.JSONObject;
-import org.wso2.carbon.apimgt.gateway.handlers.throttling.APIThrottleConstants;
+import org.wso2.carbon.apimgt.gateway.handlers.Utils;
 import org.wso2.carbon.apimgt.impl.APIConstants;
-import org.wso2.carbon.apimgt.impl.utils.APIUtil;
 
-import java.net.Inet4Address;
-import java.net.Inet6Address;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -68,7 +63,6 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
     @Override
     public boolean targetResponse(ByteBuffer buffer, MessageContext axis2Ctx) {
         int eventCount = getEventCount(buffer);
-        log.info("No. of events: " + eventCount); // todo -remove
         if (log.isDebugEnabled()) {
             log.debug("No. of events =" + eventCount);
         }
@@ -78,6 +72,7 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
         return true;
     }
 
+    @SuppressWarnings("unused")
     public void setNoOfExecutorThreads(int executorThreads) {
         this.noOfExecutorThreads = executorThreads;
     }
@@ -95,19 +90,8 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
             String messageId = UIDGenerator.generateURNString();
             ThrottleInfo throttleInfo = (ThrottleInfo) throttleObject;
             String remoteIP = throttleInfo.getRemoteIp();
-            JSONObject additionalProperties = new JSONObject();
-            if (remoteIP != null && remoteIP.length() > 0) {
-                try {
-                    InetAddress address = APIUtil.getAddress(remoteIP);
-                    if (address instanceof Inet4Address) {
-                        additionalProperties.put(APIThrottleConstants.IP, APIUtil.ipToLong(remoteIP));
-                    } else if (address instanceof Inet6Address) {
-                        additionalProperties.put(APIThrottleConstants.IPv6, APIUtil.ipToBigInteger(remoteIP));
-                    }
-                } catch (UnknownHostException ex) {
-                    log.error("Error while parsing host IP " + remoteIP, ex);
-                }
-            }
+            JSONObject propertiesMap = new JSONObject();
+            Utils.setRemoteIp(propertiesMap, remoteIP);
             boolean isThrottled = isThrottled(throttleInfo.getSubscriberTenantDomain(),
                                               throttleInfo.getResourceLevelThrottleKey(),
                                               throttleInfo.getSubscriptionLevelThrottleKey(),
@@ -117,7 +101,7 @@ public class SseStreamInterceptor extends DefaultStreamInterceptor {
                 return false;
             }
             throttlePublisherService.execute(
-                    () -> SseUtils.publishNonThrottledEvent(eventCount, messageId, throttleInfo, additionalProperties));
+                    () -> SseUtils.publishNonThrottledEvent(eventCount, messageId, throttleInfo, propertiesMap));
             return true;
         } else {
             log.error("Throttle object cannot be null.");
